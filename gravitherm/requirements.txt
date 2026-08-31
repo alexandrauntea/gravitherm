@@ -1,0 +1,27 @@
+# Simulare
+numpy>=1.26
+scipy>=1.11
+gymnasium>=0.29
+
+# Agent RL
+stable-baselines3>=2.3
+torch>=2.2
+onnx>=1.16
+onnxruntime>=1.18
+
+# Dashboard
+dash>=2.17
+plotly>=5.22
+
+# IoT (rulare pe Raspberry Pi - unele nu se instaleaza pe laptop, vezi nota)
+paho-mqtt>=2.1
+influxdb-client>=1.44
+# w1thermsensor>=2.0            # doar pe Raspberry Pi (necesita 1-Wire)
+# adafruit-circuitpython-bmp280>=3.2  # doar pe Raspberry Pi (necesita I2C)
+# gpiozero>=2.0                 # doar pe Raspberry Pi
+
+# Testare & calitate cod
+pytest>=8.2
+pytest-cov>=5.0
+ruff>=0.5
+black>=24.4
