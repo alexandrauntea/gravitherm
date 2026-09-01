@@ -4,7 +4,7 @@ Contractul de topic-uri si payload e definit in interfaces.py.
 """
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import paho.mqtt.client as mqtt
 
@@ -19,9 +19,11 @@ def make_client(client_id: str) -> mqtt.Client:
 
 def publish_reading(client: mqtt.Client, topic_suffix: str, value: float, unit: str) -> None:
     topic = f"{MQTT_TOPIC_PREFIX}/sensors/{topic_suffix}"
-    payload = json.dumps({
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "value": value,
-        "unit": unit,
-    })
+    payload = json.dumps(
+        {
+            "timestamp": datetime.now(UTC).isoformat(),
+            "value": value,
+            "unit": unit,
+        }
+    )
     client.publish(topic, payload)

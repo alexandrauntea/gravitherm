@@ -40,5 +40,5 @@ def soil_temperature_c(
     (a nu se folosi acest model naiv pentru a "dovedi" stabilitate pe
     perioade multi-anuale fara a discuta explicit deriva termica).
     """
-    x = (radius_m ** 2) / (4 * soil_diffusivity_m2_s * time_s)
+    x = (radius_m**2) / (4 * soil_diffusivity_m2_s * time_s)
     return undisturbed_temp_c + (linear_heat_flux_w_m / (4 * 3.141592653589793 * soil_conductivity)) * exp1(x)

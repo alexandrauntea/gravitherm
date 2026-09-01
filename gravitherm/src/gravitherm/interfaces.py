@@ -22,12 +22,12 @@ class Observation:
     să nu observe nicio diferență între cele două surse.
     """
 
-    utl_temperature_c: float      # temperatura buclei UTL, °C
-    pper_pressure_bar: float      # presiunea pe conducta PPER, bar
-    pper_power_w: float           # puterea instantanee estimată PPER, W
-    hour_of_day: float            # 0.0-23.99, pentru semnalul de tarif orar
-    energy_price: float           # tarif orar normalizat 0.0-1.0 (1.0 = varf)
-    hvac_load_w: float            # consumul HVAC curent simulat/estimat, W
+    utl_temperature_c: float  # temperatura buclei UTL, °C
+    pper_pressure_bar: float  # presiunea pe conducta PPER, bar
+    pper_power_w: float  # puterea instantanee estimată PPER, W
+    hour_of_day: float  # 0.0-23.99, pentru semnalul de tarif orar
+    energy_price: float  # tarif orar normalizat 0.0-1.0 (1.0 = varf)
+    hvac_load_w: float  # consumul HVAC curent simulat/estimat, W
 
 
 @dataclass

@@ -1,7 +1,5 @@
 """Consuma mesaje MQTT si le scrie in InfluxDB (time-series)."""
 
-from gravitherm.config import INFLUXDB_BUCKET, INFLUXDB_ORG, INFLUXDB_URL
-
 
 def write_point(measurement: str, value: float, tags: dict | None = None) -> None:
     """TODO(Andreea): implementati cu influxdb-client:
