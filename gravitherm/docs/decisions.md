@@ -26,3 +26,11 @@ Format: 3-5 rânduri per sesiune/MVP — ce am decis, de ce, ce a rămas deschis
 - Motiv: valorile scenariului real (60-80m, 0.05 L/s) descriu o clădire de 20 etaje, NU macheta de laborator (rezervor + tub silicon 6mm + pompă mini DC). Cele două scenarii au roluri diferite — real = extrapolare pentru raport, laborator = ce se măsoară fizic — și nu trebuie amestecate (vezi `pper_model.py` pentru detalii).
 - Alternative luate în calcul: am luat în calcul să punem o valoare „plauzibilă" acum, ca placeholder — respinsă, pentru că orice cifră inventată aici ar da o falsă senzație de precizie înainte să existe măsurătoarea reală.
 - Ce rămâne deschis: măsurarea fizică a înălțimii rezervor→ieșire și calibrarea `pper_model.pressure_to_flow_estimate_l_s()` cu citiri reale de la BMP280, în Faza II (Săpt. 4-6), odată ce macheta fizică ajunge. Puterea rezultată la scară de laborator va fi probabil de ordinul miliwaților — normal, e o limitare deja recunoscută explicit în propunere.
+
+
+## [MVP1] Agent RL — Adapter mediu, reward parametrizat și export ONNX — 2026-09-05, Alina
+
+- Decizie: Crearea clasei `GraviThermAgentEnv` în `src/gravitherm/agent/env_adapter.py` ca wrapper Gymnasium în locul modificării fișierelor comune `interfaces.py` sau `simulation/env.py`. Parametrizarea funcției de recompensă prin `RewardWeights`.
+- Motiv: Păstrează contractul strict între module (regula de bază a echipei). `GraviThermAgentEnv` convertește observațiile în `np.ndarray(shape=(6,), dtype=float32)` necesare pentru SB3 PPO și efectuează calculul recompensei multi-obiectiv.
+- Alternative luate în calcul: Modificarea `Observation` în `interfaces.py` pentru adăugarea metodelor `to_array()` — respinsă pentru a evita atingerea fișierelor comune ale echipei fără o discuție prealabilă.
+- Ce rămâne deschis: Tunarea fină a ponderilor de recompensă în Faza III pe baza datelor reale din instrumentarea IoT.
