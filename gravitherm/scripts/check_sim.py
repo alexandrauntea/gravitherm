@@ -9,9 +9,7 @@ from gravitherm.simulation.utl_model import soil_temperature_c
 def main():
     print("=== 1. TEST MODEL PPER (pper_model.py) ===")
     p_real = pper_power_w(flow_rate_l_s=0.05, head_m=60.0)
-    print(
-        f"  Putere PPER (Cladire reala 60m, Q=0.05 L/s, eta=0.72): {p_real:.2f} W"
-    )
+    print(f"  Putere PPER (Cladire reala 60m, Q=0.05 L/s, eta=0.72): {p_real:.2f} W")
     print("   Cifra se potriveste cu valoarea de ~21W citata in propunere!")
 
     print("\n=== 2. TEST MODEL UTL (utl_model.py) ===")
@@ -28,9 +26,7 @@ def main():
         soil_diffusivity_m2_s=1e-6,
     )
     print(f"  Temp.sol la r=0.5m dupa 1 minut (sol neperturbat) : {t_1min:.2f} C")
-    print(
-        f"  Temp.sol la r=0.5m dupa 100 zile (deriva termica) : {t_100zile:.2f} C"
-    )
+    print(f"  Temp.sol la r=0.5m dupa 100 zile (deriva termica) : {t_100zile:.2f} C")
     print("   Ecuatia ILR functioneaza conform teoriei fizice!")
 
     print("\n=== 3. TEST PROFIL HVAC (hvac_profile.py) ===")
@@ -48,7 +44,7 @@ def main():
     for k, v in obs_reset.items():
         print(f"    {k:20s}: {v}")
 
-    obs_step, reward, term, trunc, _ = env.step(action=1)
+    obs_step, _, _, _, _ = env.step(action=1)
     print("\n  [step(action=1)] Observation:")
     for k, v in obs_step.items():
         print(f"    {k:20s}: {v}")
