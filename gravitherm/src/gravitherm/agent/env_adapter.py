@@ -62,11 +62,22 @@ def array_to_obs(arr: np.ndarray) -> Observation:
 class GraviThermAgentEnv(gym.Env):
     """Wrapper peste GraviThermEnv conform specificațiilor Gymnasium și SB3."""
 
-    def __init__(self, hvac_noise_std: float = 0.0, reward_weights: RewardWeights | None = None):
+    def __init__(
+        self,
+        hvac_noise_std: float = 0.0,
+        reward_weights: RewardWeights | None = None,
+        continuous_actions: bool = False,
+    ):
         super().__init__()
         self.inner_env = GraviThermEnv(hvac_noise_std=hvac_noise_std)
         self.observation_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(6,), dtype=np.float32)
-        self.action_space = self.inner_env.action_space
+        self.continuous_actions = continuous_actions
+
+        if continuous_actions:
+            self.action_space = gym.spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32)
+        else:
+            self.action_space = self.inner_env.action_space
+
         self.reward_weights = reward_weights or RewardWeights()
 
     def reset(self, *, seed=None, options=None):
@@ -75,7 +86,13 @@ class GraviThermAgentEnv(gym.Env):
         return obs_to_array(obs_raw), info
 
     def step(self, action):
-        obs_raw, _, terminated, truncated, info = self.inner_env.step(action)
+        if self.continuous_actions:
+            act_val = float(np.clip(action, 0.0, 1.0).item() if isinstance(action, np.ndarray) else action)
+            discrete_action = 1 if act_val > 0.05 else 0
+        else:
+            discrete_action = int(action)
+
+        obs_raw, _, terminated, truncated, info = self.inner_env.step(discrete_action)
         if isinstance(obs_raw, dict):
             obs = Observation(**obs_raw)
         elif isinstance(obs_raw, Observation):

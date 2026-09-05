@@ -34,3 +34,11 @@ Format: 3-5 rânduri per sesiune/MVP — ce am decis, de ce, ce a rămas deschis
 - Motiv: Păstrează contractul strict între module (regula de bază a echipei). `GraviThermAgentEnv` convertește observațiile în `np.ndarray(shape=(6,), dtype=float32)` necesare pentru SB3 PPO și efectuează calculul recompensei multi-obiectiv.
 - Alternative luate în calcul: Modificarea `Observation` în `interfaces.py` pentru adăugarea metodelor `to_array()` — respinsă pentru a evita atingerea fișierelor comune ale echipei fără o discuție prealabilă.
 - Ce rămâne deschis: Tunarea fină a ponderilor de recompensă în Faza III pe baza datelor reale din instrumentarea IoT.
+
+
+## [MVP2] Agent RL — Evaluare Baseline, algoritm SAC și comparare Faza I — 2026-09-05, Alina
+
+- Decizie: Implementarea clasei `BaselineOnOffPolicy` în `agent/evaluation.py` și adăugarea suportului `continuous_actions=True` în `GraviThermAgentEnv` pentru antrenarea `train_sac.py`.
+- Motiv: Faza I din propunere cere o comparație cantitativă între o politică clasică de termostat și agentul RL. Adăugarea acțiunilor continue permite antrenarea ambilor algoritmi (PPO și SAC) fără a afecta interfața `interfaces.py`.
+- Alternative luate în calcul: Crearea unui nou mediu complet separat pentru SAC — respinsă pentru a evita duplicarea codului.
+- Ce rămâne deschis: Calibrarea mai fină a agentului pe un orizont de antrenare mai lung (50.000+ pași) în Faza III.
