@@ -1,13 +1,13 @@
 import numpy as np
 
 from gravitherm.simulation.env import GraviThermEnv
-from scripts.baseline_onoff import run_baseline_episode
+from scripts.baseline_onoff import on_off_controller, run_baseline_episode
 
 
-def test_env_reset_returns_valid_observation():
-    """Verifica reset-ul mediului Gymnasium si ca intoarce o observatie conform contractului."""
-    env = GraviThermEnv()
-    obs_dict, _ = env.reset(seed=42)
+def test_env_reset_return_valid_observation():
+    """Verifica reset-ul mediului Gymnasium si ca intoarce o observation conform contractului."""
+    env1 = GraviThermEnv()
+    obs_dict, _ = env1.reset(seed=42)
 
     assert isinstance(obs_dict, dict)
     assert "utl_temperature_c" in obs_dict
@@ -47,7 +47,7 @@ def test_on_off_baseline_episode_no_nan_and_bounded():
             assert not np.isinf(v), f"Valoarea {k} este Inf la pasul {rec['step']}"
 
         temp = rec["utl_temperature_c"]
-        assert 5.0 <= temp <= 40.0, f"Temperatura {temp}C este in afara limitelor fizice plauzibile"
+        assert 5.0 <= temp <= 40.0, f"Temperatura {temp}C este in afara limitelor fizice plauzibilit"
 
 
 def test_pump_action_affects_power_and_temperature():
@@ -64,3 +64,28 @@ def test_pump_action_affects_power_and_temperature():
     obs_on, _, _, _, _ = env.step(action=1)
     assert obs_on["pper_power_w"] > 20.0
     assert obs_on["pper_pressure_bar"] > 5.0
+
+
+def test_env_stochastic_long_term_stability():
+    """Testeaza 10.000 de pasi simulati cu zgomot HVAC stocastic (std=100W)."""
+    env = GraviThermEnv(hvac_noise_std=100.0)
+    obs_dict, _ = env.reset(seed=42)
+    pump_on_count = 0
+
+    for step_idx in range(1, 10_001):
+        temp_c = obs_dict["utl_temperature_c"]
+        if step_idx % 2 == 0:
+            action = int(env.action_space.sample())
+        else:
+            action = on_off_controller(current_temp_c=temp_c, pump_is_on=(bool(pump_on_count > 0)))
+
+        obs_dict, _, terminated, truncated, _ = env.step(action)
+
+        for key, val in obs_dict.items():
+            assert not np.isnan(val), f"NaN la pasul {step_idx} pentru {key}"
+            assert not np.isinf(val), f"Inf la pasul {step_idx} pentru {key}"
+
+        if terminated or truncated:
+            obs_dict, _ = env.reset()
+
+    assert 5.0 <= obs_dict["utl_temperature_c"] <= 40.0
