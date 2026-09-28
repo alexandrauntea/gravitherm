@@ -12,7 +12,11 @@ from gravitherm.agent.env_adapter import array_to_obs, obs_to_array
 from gravitherm.agent.inference import PolicyRunner
 from gravitherm.config import COMFORT_TEMP_MAX_C, COMFORT_TEMP_MIN_C, ONNX_MODEL_PATH
 from gravitherm.simulation.env import GraviThermEnv
-from scripts.baseline_onoff import run_baseline_episode
+
+try:
+    from scripts.baseline_onoff import run_baseline_episode
+except ModuleNotFoundError:
+    from baseline_onoff import run_baseline_episode
 
 
 def evaluate_onnx_episode(env: GraviThermEnv, runner: PolicyRunner, num_steps: int = 1440) -> list[dict]:
