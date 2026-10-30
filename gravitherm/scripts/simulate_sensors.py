@@ -22,7 +22,7 @@ import argparse
 import json
 import math
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import paho.mqtt.client as mqtt
 
@@ -41,11 +41,13 @@ PRESSURE_NOISE_BAR = 0.05
 
 
 def make_payload(value: float, unit: str) -> str:
-    return json.dumps({
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "value": round(value, 3),
-        "unit": unit,
-    })
+    return json.dumps(
+        {
+            "timestamp": datetime.now(UTC).isoformat(),
+            "value": round(value, 3),
+            "unit": unit,
+        }
+    )
 
 
 def simulated_temperature(sensor_name: str, elapsed_s: float) -> float:
@@ -56,13 +58,19 @@ def simulated_temperature(sensor_name: str, elapsed_s: float) -> float:
 
 def simulated_pressure(elapsed_s: float) -> float:
     import random
+
     return BASE_PRESSURE_BAR + random.uniform(-PRESSURE_NOISE_BAR, PRESSURE_NOISE_BAR)
 
 
 def main():
     parser = argparse.ArgumentParser(description="Simulator de senzori GraviTherm (fara hardware).")
     parser.add_argument("--interval", type=float, default=5.0, help="Secunde intre publicari (implicit 5)")
-    parser.add_argument("--duration", type=float, default=None, help="Durata totala in secunde (implicit: ruleaza pana la Ctrl+C)")
+    parser.add_argument(
+        "--duration",
+        type=float,
+        default=None,
+        help="Durata totala in secunde (implicit: ruleaza pana la Ctrl+C)",
+    )
     parser.add_argument("--broker-host", type=str, default=MQTT_BROKER_HOST)
     parser.add_argument("--broker-port", type=int, default=MQTT_BROKER_PORT)
     args = parser.parse_args()
@@ -71,7 +79,9 @@ def main():
     client.connect(args.broker_host, args.broker_port)
     client.loop_start()
 
-    print(f"[simulator] conectat la {args.broker_host}:{args.broker_port}, public la fiecare {args.interval}s (Ctrl+C pentru oprire)")
+    print(
+        f"[simulator] conectat la {args.broker_host}:{args.broker_port}, public la fiecare {args.interval}s (Ctrl+C pentru oprire)"
+    )
 
     start = time.time()
     try:
@@ -88,7 +98,9 @@ def main():
             pressure = simulated_pressure(elapsed)
             client.publish(f"{MQTT_TOPIC_PREFIX}/sensors/pressure", make_payload(pressure, "bar"))
 
-            print(f"[simulator] t={elapsed:5.1f}s  temp1={simulated_temperature('temp1', elapsed):.2f}C  pressure={pressure:.3f}bar")
+            print(
+                f"[simulator] t={elapsed:5.1f}s  temp1={simulated_temperature('temp1', elapsed):.2f}C  pressure={pressure:.3f}bar"
+            )
             time.sleep(args.interval)
     except KeyboardInterrupt:
         print("\n[simulator] oprit manual.")

@@ -14,9 +14,9 @@ class PressureReading:
 
 def read_pressure() -> PressureReading:
     """TODO(Andreea): implementati cu adafruit_bmp280:
-        import board, adafruit_bmp280
-        i2c = board.I2C()
-        sensor = adafruit_bmp280.Adafruit_BMP280_I2C(i2c)
-        return PressureReading(sensor.pressure / 1000, sensor.temperature)
+    import board, adafruit_bmp280
+    i2c = board.I2C()
+    sensor = adafruit_bmp280.Adafruit_BMP280_I2C(i2c)
+    return PressureReading(sensor.pressure / 1000, sensor.temperature)
     """
     raise NotImplementedError("De implementat pe Raspberry Pi cu hardware conectat.")

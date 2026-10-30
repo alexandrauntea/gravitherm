@@ -15,14 +15,16 @@ class PolicyRunner:
 
     def act(self, obs: Observation) -> Action:
         input_array = np.array(
-            [[
-                obs.utl_temperature_c,
-                obs.pper_pressure_bar,
-                obs.pper_power_w,
-                obs.hour_of_day,
-                obs.energy_price,
-                obs.hvac_load_w,
-            ]],
+            [
+                [
+                    obs.utl_temperature_c,
+                    obs.pper_pressure_bar,
+                    obs.pper_power_w,
+                    obs.hour_of_day,
+                    obs.energy_price,
+                    obs.hvac_load_w,
+                ]
+            ],
             dtype=np.float32,
         )
         outputs = self.session.run(None, {"observation": input_array})

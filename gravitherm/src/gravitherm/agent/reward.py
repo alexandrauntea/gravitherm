@@ -20,7 +20,9 @@ def compute_reward(obs: Observation, grid_import_w: float) -> RewardBreakdown:
         discomfort_penalty = 0.0
     else:
         comfort = 0.0
-        deviation = min(abs(obs.utl_temperature_c - COMFORT_TEMP_MIN_C), abs(obs.utl_temperature_c - COMFORT_TEMP_MAX_C))
+        deviation = min(
+            abs(obs.utl_temperature_c - COMFORT_TEMP_MIN_C), abs(obs.utl_temperature_c - COMFORT_TEMP_MAX_C)
+        )
         discomfort_penalty = deviation * 0.1
 
     recaptured_energy_bonus = 0.05 * obs.pper_power_w
