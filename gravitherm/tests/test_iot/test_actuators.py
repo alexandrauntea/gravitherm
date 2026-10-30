@@ -108,3 +108,29 @@ def test_rgb_led_controller_blink_and_set_led():
 
     set_led(LedState.GREEN)
     led.close()
+
+
+def test_peltier_controller_lifecycle_and_telemetry():
+    from gravitherm.iot.actuators.peltier import PeltierController
+
+    peltier = PeltierController(pin=25)
+    assert peltier.is_on is False
+
+    peltier.turn_on()
+    assert peltier.is_on is True
+
+    msg = peltier.to_telemetry_message()
+    assert "timestamp" in msg
+    assert msg["peltier_on"] is True
+    assert msg["value"] == 1.0
+    assert msg["unit"] == "bool"
+
+    peltier.turn_off()
+    assert peltier.is_on is False
+
+    peltier.apply(True)
+    assert peltier.is_on is True
+
+    peltier.stop()
+    assert peltier.is_on is False
+    peltier.close()
