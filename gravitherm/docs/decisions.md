@@ -27,6 +27,8 @@ Format: 3-5 rânduri per sesiune/MVP — ce am decis, de ce, ce a rămas deschis
 - Alternative luate în calcul: am luat în calcul să punem o valoare „plauzibilă" acum, ca placeholder — respinsă, pentru că orice cifră inventată aici ar da o falsă senzație de precizie înainte să existe măsurătoarea reală.
 - Ce rămâne deschis: măsurarea fizică a înălțimii rezervor→ieșire și calibrarea `pper_model.pressure_to_flow_estimate_l_s()` cu citiri reale de la BMP280, în Faza II (Săpt. 4-6), odată ce macheta fizică ajunge. Puterea rezultată la scară de laborator va fi probabil de ordinul miliwaților — normal, e o limitare deja recunoscută explicit în propunere.
 
+## IoT Setup - Andreea
+- Am verificat stack-ul Docker Compose si simulatorul de senzori.
 
 ## [MVP1] Agent RL — Adapter mediu, reward parametrizat și export ONNX — 2026-09-05, Alina
 
@@ -42,5 +44,4 @@ Format: 3-5 rânduri per sesiune/MVP — ce am decis, de ce, ce a rămas deschis
 - Motiv: Faza I din propunere cere o comparație cantitativă între o politică clasică de termostat și agentul RL. Adăugarea acțiunilor continue permite antrenarea ambilor algoritmi (PPO și SAC) fără a afecta interfața `interfaces.py`.
 - Alternative luate în calcul: Crearea unui nou mediu complet separat pentru SAC — respinsă pentru a evita duplicarea codului.
 - Ce rămâne deschis: Calibrarea mai fină a agentului pe un orizont de antrenare mai lung (50.000+ pași) în Faza III.
-## IoT Setup - Andreea
-- Am verificat stack-ul Docker Compose si simulatorul de senzori.
+
