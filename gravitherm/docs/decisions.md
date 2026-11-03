@@ -45,3 +45,15 @@ Format: 3-5 rânduri per sesiune/MVP — ce am decis, de ce, ce a rămas deschis
 - Alternative luate în calcul: Crearea unui nou mediu complet separat pentru SAC — respinsă pentru a evita duplicarea codului.
 - Ce rămâne deschis: Calibrarea mai fină a agentului pe un orizont de antrenare mai lung (50.000+ pași) în Faza III.
 
+## [MVP4/Hardware] Remapare senzori DS18B20 fizici și protecție termică Peltier — 2026-11-03, Alina
+
+- Decizie: Definirea unei surse unice de adevăr în `config.py` pentru cei 3 senzori DS18B20:
+  `DS18B20_COLD_SIDE = "28-0000006ca69e"` (partea rece Peltier / "sol" UTL),
+  `DS18B20_RESERVOIR = "28-0000006e6d0e"` (rezervor apă caldă — alimentează `Observation.utl_temperature_c`),
+  `DS18B20_HOT_SIDE = "28-0000006ffba8"` (partea caldă Peltier / radiator — DOAR protecție fail-safe).
+  Senzorul de retur a fost eliminat. Protecție termică automată activată la `HOT_SIDE_LIMIT_C = 60.0°C` (avertizare la `50.0°C`).
+- Motiv: Modificarea fizică a montajului pe bancul Raspberry Pi 4. Senzorul cald previne delaminarea modulului termoelectric TEC1-12706 (care se distruge la >70°C). Forma tensorului de intrare ONNX (1, 6) și interfața `Observation` rămân neschimbate.
+- Alternative luate în calcul: Păstrarea enumerării implicite pe magistrala 1-Wire — respinsă categoric, deoarece ordinea device-urilor pe bus nu este garantată și ar putea confunda temperatura de siguranță cu cea a apei.
+- Ce rămâne deschis: Testarea pe bancul fizic cu `python scripts/hw_tests/01_test_sensors.py`.
+
+
