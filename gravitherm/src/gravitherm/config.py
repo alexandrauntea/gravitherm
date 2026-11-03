@@ -48,3 +48,20 @@ INFLUXDB_ORG = "gravitherm"
 
 # --- Model RL ---
 ONNX_MODEL_PATH = "models/rlaea_policy.onnx"
+
+# --- Configurare Hardware & Machetă Reală / Mock ---
+HARDWARE_MODE = True  # True când rulăm pe Raspberry Pi cu componente fizice
+
+# Mod per-componentă (permite funcționare mixtă hardware/mock)
+USE_REAL_DS18B20 = True  # Senzori DS18B20 reali conectați pe magistrala 1-Wire
+USE_REAL_PUMP = True  # Pompă QR50D reală comandată prin L298N
+USE_REAL_PELTIER = True  # Modul Peltier TEC1-12706 comandat prin MOSFET
+USE_REAL_BMP280 = False  # Senzor neconectat fizic -> se folosește MOCK
+USE_REAL_LED = False  # LED RGB inexistent pe machetă -> MOCK / dezactivat
+
+# Alocare pini GPIO (BCM) conform montajului fizic GraviTherm
+GPIO_1WIRE = 4  # Pin 1-Wire pentru magistrala DS18B20 (pull-up 4.7kΩ)
+GPIO_PUMP_IN1 = 23  # Driver L298N IN1
+GPIO_PUMP_IN2 = 24  # Driver L298N IN2
+GPIO_PUMP_ENA = None  # Jumper ENA montat (viteză fixă 100%, fără pin PWM dedicat)
+GPIO_PELTIER = 25  # Comandă Poartă (Gate) MOSFET Peltier (Active HIGH: 1=Pornit, 0=Oprit)
