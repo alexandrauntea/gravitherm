@@ -16,6 +16,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from gravitherm.config import DS18B20_COLD_SIDE, DS18B20_HOT_SIDE, DS18B20_RESERVOIR, DS18B20_ROLES
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_W1_PATH = Path("/sys/bus/w1/devices")
@@ -302,4 +304,69 @@ def read_temperature(
 
     sensor = DS18B20Sensor(sensor_id=sensor_id, w1_path=w1_path)
     return sensor.read_temperature(max_retries=max_retries, retry_delay_s=retry_delay_s)
+
+
+def read_mapped_temperatures(
+    w1_path: Path | str = DEFAULT_W1_PATH,
+    max_retries: int = MAX_RETRIES,
+    retry_delay_s: float = RETRY_DELAY_S,
+) -> dict[str, float | None]:
+    """Citește senzorii DS18B20 mapați conform rolurilor definite în config.py.
+
+    Sursa unică de adevăr pentru roluri este `config.DS18B20_ROLES`:
+        - 'reservoir': apă caldă / rezervor (alimentează obs.utl_temperature_c)
+        - 'cold_side': partea rece a Peltier-ului ("solul" UTL)
+        - 'hot_side' : partea caldă a Peltier-ului / radiator (protecție termică fail-safe)
+
+    Returns:
+        dict[str, float | None] cu cheile 'cold_side', 'reservoir', 'hot_side'.
+        Dacă un senzor lipsește de pe magistrală sau citirea eșuează, valoarea este None.
+    """
+    mapped_temps: dict[str, float | None] = {}
+    for role, sensor_id in DS18B20_ROLES.items():
+        try:
+            sensor = DS18B20Sensor(sensor_id=sensor_id, w1_path=w1_path)
+            temp = sensor.read_temperature(max_retries=max_retries, retry_delay_s=retry_delay_s)
+            mapped_temps[role] = temp
+        except Exception as exc:
+            logger.warning(
+                "Eroare la citirea senzorului DS18B20 rol='%s' (id=%s): %s",
+                role,
+                sensor_id,
+                exc,
+            )
+            mapped_temps[role] = None
+    return mapped_temps
+
+
+def read_sensor_by_role(
+    role: str,
+    w1_path: Path | str = DEFAULT_W1_PATH,
+    max_retries: int = MAX_RETRIES,
+    retry_delay_s: float = RETRY_DELAY_S,
+) -> float:
+    """Citește temperatura senzorului asociat unui rol ('cold_side', 'reservoir', 'hot_side').
+
+    Args:
+        role: Numele rolului definit în config.DS18B20_ROLES.
+        w1_path: Calea către directorul 1-Wire.
+        max_retries: Număr maxim de încercări.
+        retry_delay_s: Interval între încercări.
+
+    Returns:
+        Temperatura măsurată în grade Celsius (°C).
+
+    Raises:
+        KeyError: Dacă rolul specificat nu este definit în config.
+        SensorNotFoundError: Dacă senzorul nu este prezent pe bus.
+        SensorReadError: Dacă citirea a eșuat.
+    """
+    if role not in DS18B20_ROLES:
+        raise KeyError(
+            f"Rolul '{role}' nu este definit în config.DS18B20_ROLES. Valori permise: {list(DS18B20_ROLES.keys())}"
+        )
+    sensor_id = DS18B20_ROLES[role]
+    sensor = DS18B20Sensor(sensor_id=sensor_id, w1_path=w1_path)
+    return sensor.read_temperature(max_retries=max_retries, retry_delay_s=retry_delay_s)
+
 

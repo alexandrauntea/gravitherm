@@ -65,3 +65,20 @@ GPIO_PUMP_IN1 = 23  # Driver L298N IN1
 GPIO_PUMP_IN2 = 24  # Driver L298N IN2
 GPIO_PUMP_ENA = None  # Jumper ENA montat (viteză fixă 100%, fără pin PWM dedicat)
 GPIO_PELTIER = 25  # Comandă Poartă (Gate) MOSFET Peltier (Active HIGH: 1=Pornit, 0=Oprit)
+
+# --- Mapare Senzori DS18B20 pe 1-Wire (Sursă unică de adevăr) ---
+DS18B20_COLD_SIDE = "28-0000006ca69e"  # Partea RECE a Peltier-ului ("solul" UTL)
+DS18B20_RESERVOIR = "28-0000006e6d0e"  # REZERVOR apă (temperatura principală UTL pentru agent)
+DS18B20_HOT_SIDE = "28-0000006ffba8"  # Partea CALDĂ a Peltier-ului / radiator (STRICT siguranță)
+
+# Mapare rol -> ID pentru acces programatic
+DS18B20_ROLES = {
+    "cold_side": DS18B20_COLD_SIDE,
+    "reservoir": DS18B20_RESERVOIR,
+    "hot_side": DS18B20_HOT_SIDE,
+}
+
+# --- Protecție Termică Peltier (TEC1-12706) ---
+HOT_SIDE_WARN_C = 50.0  # Prag avertizare radiator cald (°C)
+HOT_SIDE_LIMIT_C = 60.0  # Prag oprire de urgență Peltier (°C) - previne delaminarea la >70°C
+

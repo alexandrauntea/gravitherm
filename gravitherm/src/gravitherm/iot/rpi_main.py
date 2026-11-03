@@ -13,9 +13,16 @@ import logging
 import time
 from datetime import UTC, datetime
 
-from gravitherm.config import ONNX_MODEL_PATH, PIPE_FLOW_REAL_BUILDING_L_S, PIPE_HEAD_REAL_BUILDING_M
+from gravitherm.config import (
+    HOT_SIDE_LIMIT_C,
+    HOT_SIDE_WARN_C,
+    ONNX_MODEL_PATH,
+    PIPE_FLOW_REAL_BUILDING_L_S,
+    PIPE_HEAD_REAL_BUILDING_M,
+)
 from gravitherm.interfaces import Action, Observation
 from gravitherm.iot.actuators.led import LedState, RGBLEDController
+from gravitherm.iot.actuators.peltier import PeltierController
 from gravitherm.iot.actuators.pump import PumpController
 from gravitherm.iot.influx_writer import InfluxDBWriter
 from gravitherm.iot.mqtt_client import GraviThermMQTTClient
@@ -86,16 +93,67 @@ class EnergyAwarePolicyStub:
         return Action(pump_on=self._pump_on, pump_speed_pct=100.0 if self._pump_on else 0.0)
 
 
-def read_sensor_observation(simulated: bool = False) -> tuple[float, float]:
-    """Citește senzorii hardware (DS18B20 & BMP280) sau folosește valori simulate."""
-    if simulated:
-        return 22.5, 1.2
+def check_peltier_thermal_safety(hot_side_temp_c: float | None) -> tuple[bool, str]:
+    """Verifică dacă radiatorul/partea caldă a modulului Peltier este în limite sigure.
 
-    try:
-        temp_readings = ds18b20.read_all_sensors()
-        utl_temp = temp_readings[0].temperature_c if temp_readings else 22.0
-    except Exception as err:
-        logger.warning("Eroare la citirea senzorului DS18B20 (%s), se folosește fallback 22.0°C", err)
+    Parameters
+    ----------
+    hot_side_temp_c : float | None
+        Temperatura măsurată pe partea caldă a Peltier-ului (°C).
+
+    Returns
+    -------
+    tuple[bool, str]
+        (is_safe, message)
+    """
+    if hot_side_temp_c is None:
+        return (
+            False,
+            f"[SAFETY] Senzorul cald Peltier ({ds18b20.DS18B20_HOT_SIDE}) este DECONECTAT sau returnează eroare! Oprire de urgență Peltier.",
+        )
+
+    if hot_side_temp_c >= HOT_SIDE_LIMIT_C:
+        return (
+            False,
+            f"[SAFETY] Temperatură CRITICĂ radiator Peltier detectată: {hot_side_temp_c:.2f}°C >= limită {HOT_SIDE_LIMIT_C:.1f}°C! Risc iminent de delaminare! Tăiere alimentare Peltier!",
+        )
+
+    if hot_side_temp_c >= HOT_SIDE_WARN_C:
+        logger.warning(
+            "[WARNING] Temperatură ridicată radiator Peltier: %.2f°C >= prag avertizare %.1f°C",
+            hot_side_temp_c,
+            HOT_SIDE_WARN_C,
+        )
+
+    return True, "OK"
+
+
+def read_sensor_observation(
+    simulated: bool = False,
+) -> tuple[float, float, dict[str, float | None]]:
+    """Citește senzorii hardware mapați (DS18B20 & BMP280) sau folosește valori simulate.
+
+    Sursa principală de temperatură pentru bucla UTL (apa clădirii) este senzorul REZERVOR (28-0000006e6d0e).
+    Senzorul COLD_SIDE monitorizează partea rece ("solul" UTL).
+    Senzorul HOT_SIDE monitorizează radiatorul cald STRICT pentru siguranță termică.
+
+    Returns
+    -------
+    tuple[float, float, dict[str, float | None]]
+        - utl_temp: temperatura apei din rezervor (°C)
+        - pper_pressure: presiunea conductei (bar)
+        - mapped_temps: dicționar cu toate cele 3 temperaturi mapate {'reservoir', 'cold_side', 'hot_side'}
+    """
+    if simulated:
+        return 22.5, 1.2, {"reservoir": 22.5, "cold_side": 13.0, "hot_side": 28.0}
+
+    mapped_temps = ds18b20.read_mapped_temperatures()
+    utl_temp = mapped_temps.get("reservoir")
+    if utl_temp is None:
+        logger.warning(
+            "Senzorul REZERVOR (%s) nu a putut fi citit; se folosește valoare fallback 22.0°C",
+            ds18b20.DS18B20_RESERVOIR,
+        )
         utl_temp = 22.0
 
     try:
@@ -105,7 +163,7 @@ def read_sensor_observation(simulated: bool = False) -> tuple[float, float]:
         logger.warning("Eroare la citirea senzorului BMP280 (%s), se folosește fallback 1.013 bar", err)
         pper_pressure = 1.013
 
-    return utl_temp, pper_pressure
+    return utl_temp, pper_pressure, mapped_temps
 
 
 def run_control_loop(
@@ -118,6 +176,7 @@ def run_control_loop(
     logger.info("Pornire modul orchestrator IoT GraviTherm pe Raspberry Pi...")
 
     pump = PumpController()
+    peltier = PeltierController()
     led = RGBLEDController()
 
     mqtt_client: GraviThermMQTTClient | None = None
@@ -156,15 +215,21 @@ def run_control_loop(
             now = datetime.now(UTC)
             hour_of_day = float(now.hour + now.minute / 60.0)
 
-            # 1. Citire senzori hardware/simulați
-            utl_temp, pper_pressure = read_sensor_observation(simulated=simulated)
+            # 1. Citire senzori hardware/simulați (mapare pe roluri specifice)
+            utl_temp, pper_pressure, mapped_temps = read_sensor_observation(simulated=simulated)
+            cold_temp = mapped_temps.get("cold_side")
+            hot_temp = mapped_temps.get("hot_side")
 
-            # 2. Verificare protecție Fail-Safe
+            # 2a. Verificare protecție Fail-Safe generală (UTL & Presiune)
             if not check_sensor_safety(utl_temp_c=utl_temp, pressure_bar=pper_pressure):
-                logger.critical("ACTIVARE STARE DE SIGURANȚĂ FAIL-SAFE! Oprire pompă...")
+                logger.critical("ACTIVARE STARE DE SIGURANȚĂ FAIL-SAFE! Oprire pompă și Peltier...")
                 try:
                     pump.stop()
                 except NotImplementedError:
+                    pass
+                try:
+                    peltier.stop()
+                except Exception:
                     pass
                 try:
                     led.blink(LedState.RED, on_time=0.3, off_time=0.3)
@@ -191,6 +256,32 @@ def run_control_loop(
                 time.sleep(loop_interval_s)
                 continue
 
+            # 2b. Protecție termică dedicată Peltier (TEC1-12706 max 60°C)
+            peltier_safe, safety_msg = check_peltier_thermal_safety(hot_temp)
+            if not peltier_safe:
+                logger.critical("%s Decuplare forțată Peltier!", safety_msg)
+                try:
+                    peltier.stop()
+                except Exception:
+                    pass
+                if mqtt_client is not None:
+                    try:
+                        mqtt_client.publish_actuator_state(
+                            "failsafe",
+                            {"status": "PELTIER_TRIPPED", "reason": "THERMAL_CUTOFF", "message": safety_msg},
+                        )
+                    except Exception:
+                        pass
+                if influx_writer is not None:
+                    try:
+                        influx_writer.write_point(
+                            "alerts",
+                            {"peltier_cutoff": 1.0, "hot_temp_c": hot_temp if hot_temp is not None else -999.0},
+                            tags={"type": "peltier_thermal"},
+                        )
+                    except Exception:
+                        pass
+
             # 3. Calcul variabile de mediu
             calc_flow = PIPE_FLOW_REAL_BUILDING_L_S if getattr(pump, "is_on", False) else 0.05
             calc_head = PIPE_HEAD_REAL_BUILDING_M if getattr(pump, "is_on", False) else 2.0
@@ -198,7 +289,7 @@ def run_control_loop(
             price_signal = hourly_energy_price(hour_of_day)
             hvac_w = hvac_load_w(hour_of_day=hour_of_day)
 
-            # 4. Reconstruire obiect Observation conform interfaces.py
+            # 4. Reconstruire obiect Observation conform interfaces.py (fix 6 valori)
             obs = Observation(
                 utl_temperature_c=utl_temp,
                 pper_pressure_bar=pper_pressure,
@@ -233,9 +324,17 @@ def run_control_loop(
             if mqtt_client is not None:
                 try:
                     mqtt_client.publish_sensor_reading("temp1", utl_temp, "C")
+                    mqtt_client.publish_sensor_reading("temp_reservoir", utl_temp, "C")
+                    if cold_temp is not None:
+                        mqtt_client.publish_sensor_reading("temp_peltier_cold", cold_temp, "C")
+                    if hot_temp is not None:
+                        mqtt_client.publish_sensor_reading("temp_peltier_hot", hot_temp, "C")
                     mqtt_client.publish_sensor_reading("pressure", pper_pressure, "bar")
+
                     if hasattr(pump, "to_telemetry_message"):
                         mqtt_client.publish_actuator_state("pump", pump.to_telemetry_message())
+                    if hasattr(peltier, "to_telemetry_message"):
+                        mqtt_client.publish_actuator_state("peltier", peltier.to_telemetry_message())
                     if hasattr(led, "to_telemetry_message"):
                         mqtt_client.publish_actuator_state("led", led.to_telemetry_message())
                 except Exception:
@@ -244,15 +343,21 @@ def run_control_loop(
             # 8. Scriere serii temporale în InfluxDB
             if influx_writer is not None:
                 try:
+                    point_data = {
+                        "utl_temperature_c": utl_temp,
+                        "pper_pressure_bar": pper_pressure,
+                        "pper_power_w": calc_pper_w,
+                        "hvac_load_w": hvac_w,
+                        "energy_price": price_signal,
+                    }
+                    if cold_temp is not None:
+                        point_data["cold_side_temp_c"] = cold_temp
+                    if hot_temp is not None:
+                        point_data["hot_side_temp_c"] = hot_temp
+
                     influx_writer.write_point(
                         "sensor_readings",
-                        {
-                            "utl_temperature_c": utl_temp,
-                            "pper_pressure_bar": pper_pressure,
-                            "pper_power_w": calc_pper_w,
-                            "hvac_load_w": hvac_w,
-                            "energy_price": price_signal,
-                        },
+                        point_data,
                         tags={"device": "raspberry_pi_4"},
                     )
                     influx_writer.write_point(
@@ -260,16 +365,19 @@ def run_control_loop(
                         {
                             "pump_on": 1.0 if action.pump_on else 0.0,
                             "pump_speed_pct": float(action.pump_speed_pct),
+                            "peltier_on": 1.0 if peltier.is_on else 0.0,
                         },
-                        tags={"device": "l298n_driver"},
+                        tags={"device": "hardware_drivers"},
                     )
                 except Exception:
                     pass
 
             logger.info(
-                "[Pas %d] T_UTL=%.2f°C, P_PPER=%.3f bar (%.2f W), Tarif=%.2f, Pompă=%s (%.0f%%)",
+                "[Pas %d] REZERVOR=%.2f°C | PELTIER RECE=%s | PELTIER CALD=%s | P_PPER=%.3f bar (%.2f W) | Tarif=%.2f | Pompă=%s (%.0f%%)",
                 step_count,
                 utl_temp,
+                f"{cold_temp:.2f}°C" if cold_temp is not None else "N/A",
+                f"{hot_temp:.2f}°C" if hot_temp is not None else "N/A",
                 pper_pressure,
                 calc_pper_w,
                 price_signal,
@@ -291,6 +399,11 @@ def run_control_loop(
                 pump.stop()
             else:
                 pump.apply(Action(pump_on=False, pump_speed_pct=0.0))
+        except Exception:
+            pass
+
+        try:
+            peltier.stop()
         except Exception:
             pass
 
