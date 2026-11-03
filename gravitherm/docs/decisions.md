@@ -44,3 +44,4 @@ Format: 3-5 rânduri per sesiune/MVP — ce am decis, de ce, ce a rămas deschis
 - Motiv: Faza I din propunere cere o comparație cantitativă între o politică clasică de termostat și agentul RL. Adăugarea acțiunilor continue permite antrenarea ambilor algoritmi (PPO și SAC) fără a afecta interfața `interfaces.py`.
 - Alternative luate în calcul: Crearea unui nou mediu complet separat pentru SAC — respinsă pentru a evita duplicarea codului.
 - Ce rămâne deschis: Calibrarea mai fină a agentului pe un orizont de antrenare mai lung (50.000+ pași) în Faza III.
+

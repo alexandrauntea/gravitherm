@@ -1,8 +1,11 @@
-"""Citire temperatura de la senzorii DS18B20 (1-Wire).
+"""Citire temperatură de la senzorii DS18B20 (1-Wire).
 
-Suporta atat libraria w1thermsensor cat si citirea directa din
-/sys/bus/w1/devices/<sensor_id>/w1_slave, cu mecanism de retry si tratare robusta a erorilor.
+Suportă atât librăria w1thermsensor cât și citirea directă din
+/sys/bus/w1/devices/<sensor_id>/w1_slave, cu mecanism de retry și tratare robustă a erorilor.
+Include suport de fallback (mock) pentru testare pe laptop/CI.
 """
+
+from __future__ import annotations
 
 import logging
 import os
@@ -56,6 +59,8 @@ class SensorNotFoundError(DS18B20Error):
 
 class SensorReadError(DS18B20Error):
     """Aruncata cand citirea esueaza (CRC invalid, deconectare, valoare eronata)."""
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -297,3 +302,4 @@ def read_temperature(
 
     sensor = DS18B20Sensor(sensor_id=sensor_id, w1_path=w1_path)
     return sensor.read_temperature(max_retries=max_retries, retry_delay_s=retry_delay_s)
+

@@ -1,9 +1,12 @@
 """Citire presiune apei prin I2C de la senzorul BMP280.
 
-Suporta atat libraria adafruit-circuitpython-bmp280 cat si smbus2,
-cu mecanism de retry la erori de comunicatie I2C (OSError), conversie
-din hPa/Pa in bar, validare a limitelor fizice plauzibile si formatare MQTT.
+Suportă atât librăria adafruit-circuitpython-bmp280 cât și smbus2,
+cu mecanism de retry la erori de comunicație I2C (OSError), conversie
+din hPa/Pa în bar, validare a limitelor fizice plauzibile și formatare MQTT.
+Include suport de fallback (mock) pentru testare pe laptop/CI.
 """
+
+from __future__ import annotations
 
 import logging
 import struct
@@ -73,6 +76,8 @@ class BMP280NotFoundError(BMP280Error):
 
 class BMP280ReadError(BMP280Error):
     """Aruncata cand citirea esueaza sau valoarea e in afara limitelor fizice."""
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -432,3 +437,4 @@ def read_pressure_bar(
     """
     sensor = BMP280Sensor(i2c_address=i2c_address, bus_id=bus_id)
     return sensor.read_pressure_bar(max_retries=max_retries, retry_delay_s=retry_delay_s)
+
