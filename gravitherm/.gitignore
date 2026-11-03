@@ -3,8 +3,6 @@ __pycache__/
 .venv/
 venv/
 .env
-*.onnx
-models/*.zip
 .pytest_cache/
 .ruff_cache/
 .DS_Store
