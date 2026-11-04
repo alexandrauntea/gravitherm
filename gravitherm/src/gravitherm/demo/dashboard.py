@@ -1,12 +1,13 @@
-"""Dashboard Plotly Dash pentru Demo Live GraviTherm (în limba română).
+"""Dashboard Plotly Dash pentru Demo Live GraviTherm (în limba română) - Versiunea 2.
 
-Proiectat pentru videoproiector (16:9, fără scroll la 1920x1080):
-- schemă animată SVG clădire 3D (flux apă, rotație turbină, strălucire LED, buclă UTL);
-- ceas digital mare cu ora simulată și badge fază;
-- 5 carduri KPI (fonturi >= 48px);
-- 3 grafice sincronizate pe axa fixă 00:00 - 24:00;
-- ecran mare de sumar (Faza 5) cu impact anual și CO2;
-- comenzi rapide de la tastatură (Space, P, R, S) prin clientside callback.
+Reîmprospătare vizuală:
+- Temă luminoasă vibrantă (paleta oficială GraviTherm: #055b65, #45828b, #1bd488, #b2c9c5, #e0e5e9, #fbfcfc);
+- Fără emoji nicăieri în interfață;
+- Ceas digital mare în banda de sus: alb (#fbfcfc), bold, >= 64px, monospace/tabular;
+- Panou nou complet „Deciziile agentului AI” (decizie curentă cu bară de încredere + istoric colorat pe tipuri de acțiune);
+- Schema SVG ștearsă complet;
+- Overlay sumar Faza 5 cu închidere discretă (X, Esc, backdrop click), păstrând graficele finale vizibile;
+- Buton „Reia demo” separat cu popover de confirmare (fără alert() nativ).
 """
 
 from __future__ import annotations
@@ -16,7 +17,8 @@ from typing import Any
 
 import dash
 import plotly.graph_objects as go
-from dash import Input, Output, clientside_callback, dcc, html
+import plotly.io as pio
+from dash import Input, Output, State, clientside_callback, dcc, html
 
 from gravitherm.demo.data_model import DataModel, TelemetryPoint
 from gravitherm.demo.demo_config import DemoConfig
@@ -24,9 +26,56 @@ from gravitherm.demo.engine import DemoEngine, EngineState
 
 logger = logging.getLogger("gravitherm.demo.dashboard")
 
+# --- Paleta oficială GraviTherm ---
+PALETTE = {
+    "deep": "#055b65",  # Culoare principală brand: top bar, titluri, linie RL
+    "teal": "#45828b",  # Culoare secundară: UTL, subtitluri, contururi
+    "green": "#1bd488",  # Accent vibrant: economii, PPER, punct LIVE
+    "sage": "#b2c9c5",  # Control clasic (linia fantomă), grid, elemente inactive
+    "mist": "#e0e5e9",  # Borduri, separatoare, fundal carduri
+    "white": "#fbfcfc",  # Fundal pagină
+    "card_bg": "#ffffff",  # Fundal carduri albe
+    "coral": "#ef6f5e",  # Warning, stop de urgență, exterior canicular
+    "yellow": "#f5b83d",  # Alertă tarif, pauză
+}
+
+# --- Template Plotly personalizat pentru GraviTherm ---
+gt_template = go.layout.Template()
+gt_template.layout = go.Layout(
+    paper_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="rgba(0,0,0,0)",
+    font={
+        "family": "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+        "color": PALETTE["deep"],
+    },
+    colorway=[PALETTE["deep"], PALETTE["green"], PALETTE["teal"], PALETTE["sage"]],
+    xaxis={
+        "gridcolor": PALETTE["mist"],
+        "linecolor": PALETTE["mist"],
+        "zerolinecolor": PALETTE["mist"],
+        "tickfont": {"color": PALETTE["teal"], "size": 10},
+    },
+    yaxis={
+        "gridcolor": PALETTE["mist"],
+        "linecolor": PALETTE["mist"],
+        "zerolinecolor": PALETTE["mist"],
+        "tickfont": {"color": PALETTE["teal"], "size": 10},
+    },
+)
+pio.templates["gravitherm"] = gt_template
+
 # Stiluri globale CSS injectate inline
 CUSTOM_CSS = """
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;800&family=Plus+Jakarta+Sans:wght@400;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+:root {
+    --gt-deep: #055b65;
+    --gt-teal: #45828b;
+    --gt-green: #1bd488;
+    --gt-sage: #b2c9c5;
+    --gt-mist: #e0e5e9;
+    --gt-white: #fbfcfc;
+}
 
 * {
     box-sizing: border-box;
@@ -36,93 +85,79 @@ CUSTOM_CSS = """
     -webkit-font-smoothing: antialiased;
 }
 
-body {
-    background-color: #07090e;
-    color: #f1f5f9;
+html, body {
+    background-color: var(--gt-white);
+    color: var(--gt-deep);
     overflow-x: hidden;
-    overflow-y: auto;
+    overflow-y: hidden;
+    width: 100vw;
+    height: 100vh;
 }
 
 .mono-font {
     font-family: 'JetBrains Mono', monospace;
-}
-
-/* Animații CSS pentru schema SVG */
-@keyframes pipeFlow {
-    0% { stroke-dashoffset: 40; }
-    100% { stroke-dashoffset: 0; }
-}
-
-@keyframes spinTurbine {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
-
-@keyframes pulsePeltier {
-    0%, 100% { filter: drop-shadow(0 0 6px #06d6a0); opacity: 0.75; }
-    50% { filter: drop-shadow(0 0 18px #2ec4b6); opacity: 1.0; }
-}
-
-@keyframes ledGlow {
-    0%, 100% { filter: drop-shadow(0 0 10px #facc15); opacity: 0.85; }
-    50% { filter: drop-shadow(0 0 24px #fef08a); opacity: 1.0; }
+    font-variant-numeric: tabular-nums;
 }
 
 @keyframes livePulse {
     0%, 100% { opacity: 1.0; transform: scale(1.0); }
-    50% { opacity: 0.35; transform: scale(0.92); }
+    50% { opacity: 0.35; transform: scale(0.88); }
 }
 
-@keyframes waitingBlink {
+@keyframes pauseBlink {
     0%, 100% { opacity: 1.0; }
     50% { opacity: 0.25; }
 }
 
-.pipe-running {
-    stroke-dasharray: 8 6;
-    animation: pipeFlow 0.8s linear infinite;
-}
-
-.turbine-running {
-    transform-origin: 190px 240px;
-    animation: spinTurbine 1.2s linear infinite;
-}
-
-.peltier-running {
-    animation: pulsePeltier 2.0s ease-in-out infinite;
-}
-
-.led-on {
-    animation: ledGlow 1.2s ease-in-out infinite;
+@keyframes decisionPulse {
+    0% { box-shadow: 0 0 0 0 rgba(27, 212, 136, 0.7); }
+    70% { box-shadow: 0 0 0 10px rgba(27, 212, 136, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(27, 212, 136, 0); }
 }
 
 .live-dot {
     display: inline-block;
-    width: 10px;
-    height: 10px;
-    background-color: #ef4444;
+    width: 9px;
+    height: 9px;
+    background-color: var(--gt-green);
     border-radius: 50%;
     margin-right: 6px;
+    box-shadow: 0 0 8px var(--gt-green);
     animation: livePulse 1.5s infinite;
 }
 
-.waiting-badge {
-    animation: waitingBlink 1.5s infinite;
+.pause-badge-blink {
+    animation: pauseBlink 1.2s infinite;
 }
 
-/* Carduri Glassmorphism */
-.glass-card {
-    background: rgba(15, 23, 42, 0.75);
-    backdrop-filter: blur(8px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+.decision-pulse {
+    animation: decisionPulse 0.6s ease;
+}
+
+.top-bar {
+    background-color: var(--gt-deep);
+    color: var(--gt-white);
+    border-bottom: 3px solid var(--gt-green);
+    padding: 6px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 4px 12px rgba(5, 91, 101, 0.12);
+}
+
+.white-card {
+    background: #ffffff;
+    border: 1px solid var(--gt-mist);
     border-radius: 12px;
-    padding: 12px 16px;
+    box-shadow: 0 2px 8px rgba(5, 91, 101, 0.05);
+    padding: 10px 14px;
 }
 
 .kpi-card {
-    background: linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.85) 100%);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: #ffffff;
+    border: 1px solid var(--gt-mist);
     border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(5, 91, 101, 0.05);
     padding: 10px 14px;
     display: flex;
     flex-direction: column;
@@ -130,31 +165,171 @@ body {
 }
 
 .btn-ctrl {
-    background: rgba(30, 41, 59, 0.85);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    color: #f8fafc;
-    border-radius: 8px;
-    padding: 6px 12px;
-    font-size: 13px;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    color: var(--gt-white);
+    border-radius: 7px;
+    padding: 5px 11px;
+    font-size: 12px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s ease;
 }
 
 .btn-ctrl:hover {
-    background: rgba(51, 65, 85, 0.95);
-    border-color: rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.22);
+    border-color: rgba(255, 255, 255, 0.45);
 }
 
 .btn-emergency {
-    background: rgba(220, 38, 38, 0.85);
-    border: 1px solid #ef4444;
+    background: #ef6f5e;
+    border: 1px solid #ef6f5e;
+    color: #ffffff;
 }
 
 .btn-emergency:hover {
-    background: rgba(239, 68, 68, 1.0);
+    background: #dc2626;
+}
+
+.btn-outline-primary {
+    background: transparent;
+    border: 2px solid var(--gt-deep);
+    color: var(--gt-deep);
+    border-radius: 8px;
+    padding: 8px 20px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-outline-primary:hover {
+    background: var(--gt-mist);
+}
+
+.btn-close-x {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: none;
+    background: var(--gt-mist);
+    color: var(--gt-deep);
+    font-size: 15px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-close-x:hover {
+    background: var(--gt-sage);
+    color: var(--gt-deep);
+}
+
+.custom-scroll::-webkit-scrollbar {
+    width: 4px;
+}
+.custom-scroll::-webkit-scrollbar-track {
+    background: var(--gt-white);
+}
+.custom-scroll::-webkit-scrollbar-thumb {
+    background: var(--gt-sage);
+    border-radius: 4px;
 }
 """
+
+
+def render_decision_history_item(rec: dict[str, Any]) -> html.Div:
+    """Generează un rând stilizat pentru istoricul de decizii al agentului AI."""
+    act_type = rec.get("action_type", "standby")
+    chip_colors = {
+        "pump": {
+            "bg": "rgba(27, 212, 136, 0.18)",
+            "border": PALETTE["green"],
+            "text": PALETTE["deep"],
+            "label": "POMPĂ",
+        },
+        "utl": {
+            "bg": "rgba(69, 130, 139, 0.18)",
+            "border": PALETTE["teal"],
+            "text": PALETTE["deep"],
+            "label": "UTL",
+        },
+        "standby": {
+            "bg": "rgba(178, 201, 197, 0.28)",
+            "border": PALETTE["sage"],
+            "text": PALETTE["deep"],
+            "label": "STANDBY",
+        },
+        "precool": {
+            "bg": "rgba(5, 91, 101, 0.15)",
+            "border": PALETTE["deep"],
+            "text": PALETTE["deep"],
+            "label": "PRE-RĂCIRE",
+        },
+    }
+    cfg = chip_colors.get(act_type, chip_colors["standby"])
+
+    return html.Div(
+        [
+            html.Span(
+                rec.get("time_str", "00:00"),
+                className="mono-font",
+                style={
+                    "fontSize": "11px",
+                    "fontWeight": "800",
+                    "color": PALETTE["deep"],
+                    "marginRight": "8px",
+                    "minWidth": "38px",
+                },
+            ),
+            html.Span(
+                cfg["label"],
+                style={
+                    "fontSize": "9px",
+                    "fontWeight": "800",
+                    "backgroundColor": cfg["bg"],
+                    "border": f"1px solid {cfg['border']}",
+                    "color": cfg["text"],
+                    "padding": "2px 6px",
+                    "borderRadius": "4px",
+                    "marginRight": "8px",
+                },
+            ),
+            html.Span(
+                rec.get("action_text", ""),
+                style={
+                    "fontSize": "11px",
+                    "color": PALETTE["deep"],
+                    "flex": "1",
+                    "whiteSpace": "nowrap",
+                    "overflow": "hidden",
+                    "textOverflow": "ellipsis",
+                },
+            ),
+            html.Span(
+                rec.get("gain_text", ""),
+                className="mono-font",
+                style={
+                    "fontSize": "11px",
+                    "fontWeight": "800",
+                    "color": PALETTE["green"],
+                    "marginLeft": "8px",
+                    "whiteSpace": "nowrap",
+                },
+            ),
+        ],
+        style={
+            "display": "flex",
+            "alignItems": "center",
+            "padding": "4px 8px",
+            "borderRadius": "6px",
+            "backgroundColor": "rgba(224, 229, 233, 0.4)",
+            "border": "1px solid rgba(224, 229, 233, 0.8)",
+        },
+    )
 
 
 def create_demo_dashboard(
@@ -169,345 +344,237 @@ def create_demo_dashboard(
         update_title=None,
     )
 
-    # SVG-ul interactiv al clădirii
-    def render_building_svg(pt: TelemetryPoint | None) -> html.Div:
-        pump_on = pt.pump_active if pt else False
-        peltier_on = pt.peltier_active if pt else False
-        press_val = f"{pt.pressure_kpa:.1f} kPa" if pt else "0.0 kPa"
-        flow_val = f"{pt.flow_l_min:.2f} L/min" if pt else "0.00 L/min"
-        p_extrap = f"{pt.power_pper_extrapolated_w:.1f} W" if pt else "0.0 W"
-        p_lab = f"{pt.power_pper_lab_mw:.0f} mW" if pt else "0 mW"
-
-        pipe_class = "pipe-running" if pump_on else ""
-        turbine_class = "turbine-running" if pump_on else ""
-        peltier_class = "peltier-running" if peltier_on else ""
-        led_class = "led-on" if pump_on else ""
-
-        svg_content = f"""
-        <svg viewBox="0 0 460 380" width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
-            <defs>
-                <linearGradient id="buildingGrad" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%" stop-color="#1e293b" stop-opacity="0.9"/>
-                    <stop offset="100%" stop-color="#0f172a" stop-opacity="0.95"/>
-                </linearGradient>
-                <linearGradient id="soilGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stop-color="#1c1917" stop-opacity="0.9"/>
-                    <stop offset="100%" stop-color="#0c0a09" stop-opacity="0.98"/>
-                </linearGradient>
-                <linearGradient id="waterFlowGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stop-color="#38bdf8"/>
-                    <stop offset="100%" stop-color="#0284c7"/>
-                </linearGradient>
-            </defs>
-
-            <!-- Zona Sol UTL (5-8 m adâncime) -->
-            <rect x="20" y="275" width="420" height="95" rx="8" fill="url(#soilGrad)" stroke="#44403c" stroke-width="1.5"/>
-            <text x="35" y="295" fill="#a8a29e" font-size="11" font-weight="600">SOL UTL (5-8 m) · 13°C Constant</text>
-
-            <!-- Bucla de apă UTL subterană -->
-            <path class="{peltier_class}" d="M 80 275 L 80 340 Q 80 355 95 355 L 365 355 Q 380 355 380 340 L 380 275" 
-                  fill="none" stroke="{'#06d6a0' if peltier_on else '#334155'}" stroke-width="8" stroke-linecap="round"/>
-            <text x="230" y="342" text-anchor="middle" fill="{'#06d6a0' if peltier_on else '#64748b'}" font-size="11" font-weight="bold">
-                {'RĂCIRE PASIVĂ UTL ACTIVĂ (Sol: 12.8°C)' if peltier_on else 'Buclă UTL în Standby'}
-            </text>
-
-            <!-- Structura Turnului (Macheta Clădirii 3D) -->
-            <rect x="110" y="25" width="240" height="250" rx="6" fill="url(#buildingGrad)" stroke="#334155" stroke-width="2"/>
-            
-            <!-- Ferestre etaje clădire -->
-            <g fill="#334155" opacity="0.4">
-                <rect x="130" y="45" width="35" height="22" rx="3"/>
-                <rect x="180" y="45" width="35" height="22" rx="3"/>
-                <rect x="245" y="45" width="35" height="22" rx="3"/>
-                <rect x="295" y="45" width="35" height="22" rx="3"/>
-
-                <rect x="130" y="85" width="35" height="22" rx="3"/>
-                <rect x="180" y="85" width="35" height="22" rx="3"/>
-                <rect x="245" y="85" width="35" height="22" rx="3"/>
-                <rect x="295" y="85" width="35" height="22" rx="3"/>
-
-                <rect x="130" y="125" width="35" height="22" rx="3"/>
-                <rect x="180" y="125" width="35" height="22" rx="3"/>
-                <rect x="245" y="125" width="35" height="22" rx="3"/>
-                <rect x="295" y="125" width="35" height="22" rx="3"/>
-
-                <rect x="130" y="165" width="35" height="22" rx="3"/>
-                <rect x="180" y="165" width="35" height="22" rx="3"/>
-                <rect x="245" y="165" width="35" height="22" rx="3"/>
-                <rect x="295" y="165" width="35" height="22" rx="3"/>
-            </g>
-
-            <!-- Etichetă clădire -->
-            <text x="230" y="40" text-anchor="middle" fill="#94a3b8" font-size="11" font-weight="700" letter-spacing="1">TURNUL GRAVITHERM (12-20 ETAJE)</text>
-
-            <!-- Rezervor sus (apă recirculată) -->
-            <rect x="160" y="55" width="140" height="28" rx="5" fill="#0369a1" stroke="#38bdf8" stroke-width="1.5"/>
-            <text x="230" y="73" text-anchor="middle" fill="#ffffff" font-size="11" font-weight="bold">REZERVOR APĂ (12V DC)</text>
-
-            <!-- Conducta verticală de cădere PPER -->
-            <!-- Fundal conductă -->
-            <rect x="184" y="83" width="12" height="150" fill="#0f172a" stroke="#1e293b" stroke-width="1"/>
-            <!-- Flux de apă animat prin CSS -->
-            <line class="{pipe_class}" x1="190" y1="83" x2="190" y2="233" 
-                  stroke="url(#waterFlowGrad)" stroke-width="{'8' if pump_on else '2'}" opacity="{'1.0' if pump_on else '0.3'}"/>
-
-            <!-- Turbină Hidro PPER (la baza coloanei) -->
-            <circle cx="190" cy="240" r="18" fill="#1e293b" stroke="#38bdf8" stroke-width="2.5"/>
-            <g class="{turbine_class}">
-                <line x1="190" y1="225" x2="190" y2="255" stroke="#38bdf8" stroke-width="3"/>
-                <line x1="175" y1="240" x2="205" y2="240" stroke="#38bdf8" stroke-width="3"/>
-                <line x1="179" y1="229" x2="201" y2="251" stroke="#38bdf8" stroke-width="2.5"/>
-                <line x1="179" y1="251" x2="201" y2="229" stroke="#38bdf8" stroke-width="2.5"/>
-            </g>
-            <circle cx="190" cy="240" r="5" fill="#f8fafc"/>
-
-            <!-- Becul / LED-ul fizic cu strălucire (aprins la generare PPER) -->
-            <g class="{led_class}" transform="translate(245, 222)">
-                <circle cx="18" cy="18" r="14" fill="{'#facc15' if pump_on else '#475569'}" 
-                        stroke="{'#fef08a' if pump_on else '#334155'}" stroke-width="2"/>
-                <!-- Filament -->
-                <path d="M 12 22 L 15 14 L 21 14 L 24 22" fill="none" stroke="{'#78350f' if pump_on else '#1e293b'}" stroke-width="1.5"/>
-                <text x="18" y="38" text-anchor="middle" fill="{'#fef08a' if pump_on else '#64748b'}" font-size="9" font-weight="bold">
-                    {'LED GENERATOR ON' if pump_on else 'LED OPRIT'}
-                </text>
-            </g>
-
-            <!-- Fire legătură generator -> LED -->
-            <path d="M 208 240 L 245 240" fill="none" stroke="{'#eab308' if pump_on else '#334155'}" stroke-width="2" stroke-dasharray="3 2"/>
-
-            <!-- Casete Telemetrie Live lângă tub -->
-            <!-- Presiune -->
-            <g transform="translate(20, 100)">
-                <rect width="85" height="42" rx="6" fill="#0f172a" stroke="#0284c7" stroke-width="1.5" opacity="0.95"/>
-                <text x="8" y="16" fill="#7dd3fc" font-size="9" font-weight="600">PRESIUNE</text>
-                <text x="8" y="34" fill="#f8fafc" font-size="14" font-weight="800" font-family="'JetBrains Mono', monospace">{press_val}</text>
-            </g>
-
-            <!-- Debit -->
-            <g transform="translate(20, 155)">
-                <rect width="85" height="42" rx="6" fill="#0f172a" stroke="#0284c7" stroke-width="1.5" opacity="0.95"/>
-                <text x="8" y="16" fill="#7dd3fc" font-size="9" font-weight="600">DEBIT MACHETĂ</text>
-                <text x="8" y="34" fill="#f8fafc" font-size="13" font-weight="800" font-family="'JetBrains Mono', monospace">{flow_val}</text>
-            </g>
-
-            <!-- Putere Extrapolată 60m clădire reală -->
-            <g transform="translate(340, 100)">
-                <rect width="105" height="52" rx="6" fill="#0f172a" stroke="#10b981" stroke-width="1.5" opacity="0.95"/>
-                <text x="8" y="16" fill="#6ee7b7" font-size="9" font-weight="700">PPER CLĂDIRE (60m)</text>
-                <text x="8" y="36" fill="#10b981" font-size="17" font-weight="800" font-family="'JetBrains Mono', monospace">{p_extrap}</text>
-                <text x="8" y="47" fill="#94a3b8" font-size="8">Machetă: {p_lab}</text>
-            </g>
-
-            <!-- Stare Pompă badge -->
-            <g transform="translate(340, 165)">
-                <rect width="105" height="38" rx="6" fill="{'rgba(2, 132, 199, 0.25)' if pump_on else 'rgba(51, 65, 85, 0.25)'}" 
-                      stroke="{'#0284c7' if pump_on else '#475569'}" stroke-width="1.5"/>
-                <text x="52" y="16" text-anchor="middle" fill="#94a3b8" font-size="9" font-weight="600">POMPĂ QR50D</text>
-                <text x="52" y="31" text-anchor="middle" fill="{'#38bdf8' if pump_on else '#64748b'}" font-size="12" font-weight="bold">
-                    {'PORNITĂ (100%)' if pump_on else 'OPRITĂ'}
-                </text>
-            </g>
-        </svg>
-        """
-        return html.Div(
-            [dcc.Markdown(svg_content, dangerously_allow_html=True)],
-            style={"width": "100%", "height": "320px", "display": "flex", "alignItems": "center"},
-        )
-
-    # Layout-ul complet
     app.layout = html.Div(
         [
             # Injectare stiluri CSS
             html.Div([dcc.Markdown(f"<style>{CUSTOM_CSS}</style>", dangerously_allow_html=True)]),
-            # Componente ascunse pentru ascultarea tastelor din browser (clientside callback)
+            # Monitorizare URL pentru control programmatic stare modal
+            dcc.Location(id="demo-url", refresh=False),
+            # Timer periodic Dash (1 Hz)
+            dcc.Interval(id="demo-interval", interval=1000, n_intervals=0),
+            # Input ascuns pentru recepte taste prin JS
             dcc.Input(id="key-press-input", type="text", style={"display": "none"}),
             html.Div(id="clientside-listener-dummy", style={"display": "none"}),
-            # Interval periodic 1 Hz
-            dcc.Interval(id="demo-interval", interval=cfg.dashboard_interval_ms, n_intervals=0),
-            # Container principal fără scroll la 1920x1080
+            # Stocare stare modal sumar și confirmare reset
+            dcc.Store(id="summary-modal-open-store", data=False),
+            dcc.Store(id="reset-confirm-open-store", data=False),
+            dcc.Store(id="last-phase-id-store", data=-1),
+            # 1. BANDA DE SUS (Top Bar - solid #055b65 cu text alb)
             html.Div(
                 [
-                    # 1. BANDA DE SUS (Header)
+                    # Stânga: Brand & Logo
                     html.Div(
                         [
-                            # Stânga: Brand & Titlu
                             html.Div(
                                 [
-                                    html.H1(
-                                        "GraviTherm",
+                                    html.Span(
+                                        "GRAVITHERM",
                                         style={
-                                            "fontSize": "26px",
+                                            "fontSize": "20px",
                                             "fontWeight": "800",
-                                            "color": "#38bdf8",
-                                            "letterSpacing": "-0.5px",
-                                            "display": "inline-block",
-                                            "marginRight": "8px",
+                                            "color": "#fbfcfc",
+                                            "letterSpacing": "1px",
                                         },
                                     ),
                                     html.Span(
-                                        "DEMO LIVE",
+                                        "Etapa II",
                                         style={
                                             "fontSize": "11px",
                                             "fontWeight": "800",
-                                            "backgroundColor": "#0284c7",
-                                            "color": "#ffffff",
-                                            "padding": "3px 8px",
+                                            "backgroundColor": PALETTE["green"],
+                                            "color": PALETTE["deep"],
+                                            "padding": "2px 8px",
                                             "borderRadius": "6px",
+                                            "marginLeft": "8px",
                                             "verticalAlign": "middle",
                                             "letterSpacing": "0.5px",
                                         },
                                     ),
-                                    html.Div(
-                                        "TechChallenge Honeywell 2026 · Etapa II (Prototip Laborator)",
-                                        style={"fontSize": "12px", "color": "#94a3b8", "marginTop": "2px"},
-                                    ),
                                 ],
-                                style={"width": "28%"},
+                                style={"display": "flex", "alignItems": "center"},
                             ),
-                            # Centru: Ceas mare + Badge Fază
+                            html.Div(
+                                "TechChallenge Honeywell 2026 · Clădire Inteligentă",
+                                style={"fontSize": "11px", "color": PALETTE["sage"], "marginTop": "2px"},
+                            ),
+                        ],
+                        style={"width": "26%"},
+                    ),
+                    # Centru: Ceas mare alb (>= 64px) + Badge Fază
+                    html.Div(
+                        [
                             html.Div(
                                 [
+                                    html.Span(
+                                        id="clock-display",
+                                        children="00:00",
+                                        className="mono-font",
+                                        style={
+                                            "fontSize": "64px",
+                                            "fontWeight": "800",
+                                            "color": "#fbfcfc",
+                                            "letterSpacing": "2px",
+                                            "lineHeight": "1",
+                                            "marginRight": "14px",
+                                        },
+                                    ),
                                     html.Div(
                                         [
-                                            html.Span(
-                                                id="clock-display",
-                                                children="00:00",
-                                                className="mono-font",
-                                                style={
-                                                    "fontSize": "38px",
-                                                    "fontWeight": "800",
-                                                    "color": "#f8fafc",
-                                                    "letterSpacing": "1px",
-                                                    "marginRight": "14px",
-                                                },
-                                            ),
                                             html.Span(
                                                 id="phase-badge",
                                                 children="Faza 0 · Noapte",
                                                 style={
-                                                    "fontSize": "15px",
-                                                    "fontWeight": "700",
-                                                    "backgroundColor": "rgba(56, 189, 248, 0.15)",
-                                                    "color": "#38bdf8",
-                                                    "border": "1px solid rgba(56, 189, 248, 0.35)",
-                                                    "padding": "6px 14px",
-                                                    "borderRadius": "20px",
-                                                    "verticalAlign": "middle",
+                                                    "fontSize": "13px",
+                                                    "fontWeight": "800",
+                                                    "backgroundColor": PALETTE["green"],
+                                                    "color": PALETTE["deep"],
+                                                    "padding": "5px 14px",
+                                                    "borderRadius": "18px",
+                                                    "display": "inline-block",
                                                 },
                                             ),
-                                        ],
-                                        style={
-                                            "display": "flex",
-                                            "alignItems": "center",
-                                            "justifyContent": "center",
-                                        },
-                                    ),
-                                    html.Div(
-                                        id="waiting-for-space-msg",
-                                        children="Faza curentă în desfășurare",
-                                        style={
-                                            "fontSize": "12px",
-                                            "color": "#94a3b8",
-                                            "marginTop": "2px",
-                                            "fontWeight": "600",
-                                        },
-                                    ),
-                                ],
-                                style={"width": "44%", "textAlign": "center"},
-                            ),
-                            # Dreapta: LIVE, Status Pastile & Butoane discrete
-                            html.Div(
-                                [
-                                    html.Div(
-                                        [
-                                            html.Span(className="live-dot"),
                                             html.Span(
-                                                "LIVE",
+                                                id="pause-badge",
+                                                children="PAUZĂ",
+                                                className="pause-badge-blink",
                                                 style={
                                                     "fontSize": "12px",
                                                     "fontWeight": "800",
-                                                    "color": "#ef4444",
-                                                    "marginRight": "10px",
-                                                },
-                                            ),
-                                            # Pastilă Pompă
-                                            html.Span(
-                                                id="pill-pump",
-                                                children="POMPĂ OFF",
-                                                style={
-                                                    "fontSize": "11px",
-                                                    "fontWeight": "700",
-                                                    "backgroundColor": "#1e293b",
-                                                    "color": "#94a3b8",
-                                                    "padding": "4px 8px",
+                                                    "backgroundColor": PALETTE["yellow"],
+                                                    "color": PALETTE["deep"],
+                                                    "padding": "4px 10px",
                                                     "borderRadius": "6px",
-                                                    "marginRight": "6px",
-                                                },
-                                            ),
-                                            # Pastilă UTL
-                                            html.Span(
-                                                id="pill-utl",
-                                                children="UTL ON",
-                                                style={
-                                                    "fontSize": "11px",
-                                                    "fontWeight": "700",
-                                                    "backgroundColor": "#064e3b",
-                                                    "color": "#34d399",
-                                                    "padding": "4px 8px",
-                                                    "borderRadius": "6px",
-                                                    "marginRight": "12px",
+                                                    "marginLeft": "8px",
+                                                    "display": "none",
                                                 },
                                             ),
                                         ],
-                                        style={
-                                            "display": "flex",
-                                            "alignItems": "center",
-                                            "justifyContent": "flex-end",
-                                            "marginBottom": "6px",
-                                        },
-                                    ),
-                                    # Butoane discrete backup
-                                    html.Div(
-                                        [
-                                            html.Button(
-                                                "Space → Următoarea",
-                                                id="btn-next",
-                                                className="btn-ctrl",
-                                                style={"marginRight": "4px"},
-                                            ),
-                                            html.Button(
-                                                "Pauză (P)",
-                                                id="btn-pause",
-                                                className="btn-ctrl",
-                                                style={"marginRight": "4px"},
-                                            ),
-                                            html.Button(
-                                                "Reset (R)",
-                                                id="btn-reset",
-                                                className="btn-ctrl",
-                                                style={"marginRight": "4px"},
-                                            ),
-                                            html.Button(
-                                                "STOP (S)",
-                                                id="btn-stop",
-                                                className="btn-ctrl btn-emergency",
-                                            ),
-                                        ],
-                                        style={"display": "flex", "justifyContent": "flex-end"},
+                                        style={"display": "flex", "alignItems": "center"},
                                     ),
                                 ],
-                                style={"width": "28%"},
+                                style={
+                                    "display": "flex",
+                                    "alignItems": "center",
+                                    "justifyContent": "center",
+                                },
+                            ),
+                            html.Div(
+                                id="waiting-for-space-msg",
+                                children="Faza curentă în desfășurare",
+                                style={
+                                    "fontSize": "11px",
+                                    "color": PALETTE["sage"],
+                                    "marginTop": "2px",
+                                    "fontWeight": "600",
+                                },
                             ),
                         ],
-                        className="glass-card",
-                        style={
-                            "display": "flex",
-                            "alignItems": "center",
-                            "justifyContent": "space-between",
-                            "marginBottom": "12px",
-                            "padding": "10px 18px",
-                        },
+                        style={"width": "46%", "textAlign": "center"},
                     ),
+                    # Dreapta: LIVE, Status Actuatori & Butoane
+                    html.Div(
+                        [
+                            html.Div(
+                                [
+                                    html.Span(className="live-dot"),
+                                    html.Span(
+                                        "LIVE",
+                                        style={
+                                            "fontSize": "12px",
+                                            "fontWeight": "800",
+                                            "color": PALETTE["green"],
+                                            "marginRight": "10px",
+                                        },
+                                    ),
+                                    html.Span(
+                                        id="pill-pump",
+                                        children="POMPĂ OFF",
+                                        style={
+                                            "fontSize": "11px",
+                                            "fontWeight": "700",
+                                            "backgroundColor": "rgba(255,255,255,0.12)",
+                                            "color": PALETTE["sage"],
+                                            "padding": "4px 8px",
+                                            "borderRadius": "6px",
+                                            "marginRight": "6px",
+                                        },
+                                    ),
+                                    html.Span(
+                                        id="pill-utl",
+                                        children="UTL ON",
+                                        style={
+                                            "fontSize": "11px",
+                                            "fontWeight": "700",
+                                            "backgroundColor": PALETTE["teal"],
+                                            "color": "#ffffff",
+                                            "padding": "4px 8px",
+                                            "borderRadius": "6px",
+                                            "marginRight": "10px",
+                                        },
+                                    ),
+                                ],
+                                style={
+                                    "display": "flex",
+                                    "alignItems": "center",
+                                    "justifyContent": "flex-end",
+                                    "marginBottom": "6px",
+                                },
+                            ),
+                            html.Div(
+                                [
+                                    html.Button(
+                                        "Space →",
+                                        id="btn-next",
+                                        className="btn-ctrl",
+                                        style={"marginRight": "4px"},
+                                    ),
+                                    html.Button(
+                                        "Pauză (P)",
+                                        id="btn-pause",
+                                        className="btn-ctrl",
+                                        style={"marginRight": "4px"},
+                                    ),
+                                    html.Button(
+                                        "Sumar (T)",
+                                        id="btn-open-summary",
+                                        className="btn-ctrl",
+                                        style={"marginRight": "4px", "display": "none"},
+                                    ),
+                                    html.Button(
+                                        "Reia demo",
+                                        id="btn-top-replay",
+                                        className="btn-ctrl",
+                                        style={
+                                            "marginRight": "4px",
+                                            "display": "none",
+                                            "backgroundColor": "rgba(27, 212, 136, 0.25)",
+                                            "borderColor": PALETTE["green"],
+                                            "color": "#ffffff",
+                                        },
+                                    ),
+                                    html.Button(
+                                        "Reset (R)",
+                                        id="btn-reset",
+                                        className="btn-ctrl",
+                                        style={"marginRight": "4px"},
+                                    ),
+                                    html.Button(
+                                        "STOP (S)",
+                                        id="btn-stop",
+                                        className="btn-ctrl btn-emergency",
+                                    ),
+                                ],
+                                style={"display": "flex", "justifyContent": "flex-end"},
+                            ),
+                        ],
+                        style={"width": "28%"},
+                    ),
+                ],
+                className="top-bar",
+            ),
+            # CONTAINER PRINCIPAL
+            html.Div(
+                [
                     # 2. RÂNDUL KPI (5 Carduri mari, fonturi >= 48px)
                     html.Div(
                         [
@@ -519,25 +586,25 @@ def create_demo_dashboard(
                                         style={
                                             "fontSize": "11px",
                                             "fontWeight": "700",
-                                            "color": "#94a3b8",
+                                            "color": PALETTE["teal"],
                                             "letterSpacing": "0.5px",
                                         },
                                     ),
                                     html.Div(
                                         id="kpi-decision-text",
-                                        children="Pre-răcire UTL pe tarif ieftin",
+                                        children="Pre-răcire UTL pe tarif fix",
                                         style={
-                                            "fontSize": "20px",
+                                            "fontSize": "18px",
                                             "fontWeight": "800",
-                                            "color": "#38bdf8",
+                                            "color": PALETTE["deep"],
                                             "lineHeight": "1.25",
-                                            "margin": "8px 0",
+                                            "margin": "6px 0",
                                         },
                                     ),
                                     html.Div(
                                         id="kpi-decision-sub",
-                                        children="Tarif: 0.45 lei/kWh · Minimizare rețea",
-                                        style={"fontSize": "11px", "color": "#cbd5e1"},
+                                        children="Tarif fix: 1.00 lei/kWh · Minimizare rețea",
+                                        style={"fontSize": "11px", "color": PALETTE["teal"]},
                                     ),
                                 ],
                                 className="kpi-card",
@@ -551,7 +618,7 @@ def create_demo_dashboard(
                                         style={
                                             "fontSize": "11px",
                                             "fontWeight": "700",
-                                            "color": "#94a3b8",
+                                            "color": PALETTE["teal"],
                                             "letterSpacing": "0.5px",
                                         },
                                     ),
@@ -564,7 +631,7 @@ def create_demo_dashboard(
                                                 style={
                                                     "fontSize": "48px",
                                                     "fontWeight": "800",
-                                                    "color": "#38bdf8",
+                                                    "color": PALETTE["green"],
                                                     "lineHeight": "1",
                                                 },
                                             ),
@@ -573,7 +640,7 @@ def create_demo_dashboard(
                                                 style={
                                                     "fontSize": "18px",
                                                     "fontWeight": "700",
-                                                    "color": "#7dd3fc",
+                                                    "color": PALETTE["teal"],
                                                 },
                                             ),
                                         ],
@@ -581,22 +648,22 @@ def create_demo_dashboard(
                                     ),
                                     html.Div(
                                         id="kpi-energy-extrapolated",
-                                        children="Extrapolat: 0.00 kWh/zi clădire",
-                                        style={"fontSize": "11px", "color": "#94a3b8"},
+                                        children="Extrapolat: 0.00 kWh/zi clădire 60m",
+                                        style={"fontSize": "11px", "color": PALETTE["teal"]},
                                     ),
                                 ],
                                 className="kpi-card",
                                 style={"width": "18.5%"},
                             ),
-                            # Card 3: Economie Energie (%)
+                            # Card 3: Economie Energie HVAC (%)
                             html.Div(
                                 [
                                     html.Div(
-                                        "ECONOMIE ENERGIE VS. CLASIC",
+                                        "ECONOMIE ENERGIE HVAC",
                                         style={
                                             "fontSize": "11px",
                                             "fontWeight": "700",
-                                            "color": "#94a3b8",
+                                            "color": PALETTE["teal"],
                                             "letterSpacing": "0.5px",
                                         },
                                     ),
@@ -604,29 +671,29 @@ def create_demo_dashboard(
                                         [
                                             html.Span(
                                                 id="kpi-energy-savings",
-                                                children="14.2",
+                                                children="13.7",
                                                 className="mono-font",
                                                 style={
                                                     "fontSize": "48px",
                                                     "fontWeight": "800",
-                                                    "color": "#10b981",
+                                                    "color": PALETTE["green"],
                                                     "lineHeight": "1",
                                                 },
                                             ),
                                             html.Span(
                                                 " %",
                                                 style={
-                                                    "fontSize": "22px",
+                                                    "fontSize": "20px",
                                                     "fontWeight": "700",
-                                                    "color": "#6ee7b7",
+                                                    "color": PALETTE["teal"],
                                                 },
                                             ),
                                         ],
                                         style={"margin": "4px 0"},
                                     ),
                                     html.Div(
-                                        "Țintă Faza III: -10...18% consum",
-                                        style={"fontSize": "11px", "color": "#94a3b8"},
+                                        "vs. Chiller mecanic clasic",
+                                        style={"fontSize": "11px", "color": PALETTE["teal"]},
                                     ),
                                 ],
                                 className="kpi-card",
@@ -640,7 +707,7 @@ def create_demo_dashboard(
                                         style={
                                             "fontSize": "11px",
                                             "fontWeight": "700",
-                                            "color": "#94a3b8",
+                                            "color": PALETTE["teal"],
                                             "letterSpacing": "0.5px",
                                         },
                                     ),
@@ -648,12 +715,12 @@ def create_demo_dashboard(
                                         [
                                             html.Span(
                                                 id="kpi-cost-saved",
-                                                children="21.5",
+                                                children="0.00",
                                                 className="mono-font",
                                                 style={
                                                     "fontSize": "48px",
                                                     "fontWeight": "800",
-                                                    "color": "#f59e0b",
+                                                    "color": PALETTE["deep"],
                                                     "lineHeight": "1",
                                                 },
                                             ),
@@ -662,7 +729,7 @@ def create_demo_dashboard(
                                                 style={
                                                     "fontSize": "18px",
                                                     "fontWeight": "700",
-                                                    "color": "#fcd34d",
+                                                    "color": PALETTE["teal"],
                                                 },
                                             ),
                                         ],
@@ -670,8 +737,8 @@ def create_demo_dashboard(
                                     ),
                                     html.Div(
                                         id="kpi-cost-pct",
-                                        children="Economie cost: 19.8%",
-                                        style={"fontSize": "11px", "color": "#94a3b8"},
+                                        children="Economie cost: 13.7%",
+                                        style={"fontSize": "11px", "color": PALETTE["teal"]},
                                     ),
                                 ],
                                 className="kpi-card",
@@ -685,7 +752,7 @@ def create_demo_dashboard(
                                         style={
                                             "fontSize": "11px",
                                             "fontWeight": "700",
-                                            "color": "#94a3b8",
+                                            "color": PALETTE["teal"],
                                             "letterSpacing": "0.5px",
                                         },
                                     ),
@@ -698,7 +765,7 @@ def create_demo_dashboard(
                                                 style={
                                                     "fontSize": "48px",
                                                     "fontWeight": "800",
-                                                    "color": "#10b981",
+                                                    "color": PALETTE["green"],
                                                     "lineHeight": "1",
                                                 },
                                             ),
@@ -707,7 +774,7 @@ def create_demo_dashboard(
                                                 style={
                                                     "fontSize": "20px",
                                                     "fontWeight": "700",
-                                                    "color": "#6ee7b7",
+                                                    "color": PALETTE["teal"],
                                                 },
                                             ),
                                         ],
@@ -716,7 +783,7 @@ def create_demo_dashboard(
                                     html.Div(
                                         id="kpi-comfort-classic",
                                         children="Control clasic: 91.2%",
-                                        style={"fontSize": "11px", "color": "#94a3b8"},
+                                        style={"fontSize": "11px", "color": PALETTE["teal"]},
                                     ),
                                 ],
                                 className="kpi-card",
@@ -727,33 +794,153 @@ def create_demo_dashboard(
                             "display": "flex",
                             "justifyContent": "space-between",
                             "gap": "10px",
-                            "marginBottom": "12px",
+                            "marginBottom": "8px",
                         },
                     ),
-                    # 3. RÂNDUL CENTRAL: Schema SVG Clădire (40%) + Grafic Presiune/PPER (60%)
+                    # 3. RÂNDUL CENTRAL: Panoul Deciziile Agentului AI (38%) + Grafic Presiune/PPER (62%)
                     html.Div(
                         [
-                            # Stânga: Schema Animată a Clădirii
+                            # Stânga: Panoul Deciziile Agentului AI
                             html.Div(
-                                [
+                                id="agent-decisions-panel",
+                                children=[
                                     html.Div(
                                         [
                                             html.Span(
-                                                "SCHEMĂ MACHETĂ FIZICĂ · CIRCUITE ACTIVE",
+                                                "Deciziile agentului AI",
                                                 style={
-                                                    "fontSize": "12px",
-                                                    "fontWeight": "700",
-                                                    "color": "#94a3b8",
-                                                    "letterSpacing": "0.5px",
+                                                    "fontSize": "13px",
+                                                    "fontWeight": "800",
+                                                    "color": PALETTE["deep"],
+                                                    "letterSpacing": "0.3px",
+                                                },
+                                            ),
+                                            html.Span(
+                                                " · RLAEA · PPO · inferență ONNX locală",
+                                                style={
+                                                    "fontSize": "11px",
+                                                    "fontWeight": "600",
+                                                    "color": PALETTE["teal"],
                                                 },
                                             ),
                                         ],
-                                        style={"marginBottom": "4px"},
+                                        style={"marginBottom": "8px"},
                                     ),
-                                    html.Div(id="building-svg-container", children=render_building_svg(None)),
+                                    # Card mare decizie curentă
+                                    html.Div(
+                                        id="agent-current-decision-card",
+                                        children=[
+                                            html.Div(
+                                                id="agent-decision-action",
+                                                children="PRE-RĂCIRE UTL · Pompă oprită",
+                                                style={
+                                                    "fontSize": "14px",
+                                                    "fontWeight": "800",
+                                                    "color": "#fbfcfc",
+                                                    "lineHeight": "1.3",
+                                                    "marginBottom": "3px",
+                                                },
+                                            ),
+                                            html.Div(
+                                                id="agent-decision-reason",
+                                                children="tarif fix (1.00 lei) · stocare termică pasivă · T interior 21.8°C",
+                                                style={
+                                                    "fontSize": "11px",
+                                                    "color": PALETTE["sage"],
+                                                    "marginBottom": "8px",
+                                                },
+                                            ),
+                                            html.Div(
+                                                [
+                                                    html.Div(
+                                                        [
+                                                            html.Span(
+                                                                "Încredere decizie: ",
+                                                                style={
+                                                                    "fontSize": "10px",
+                                                                    "color": PALETTE["mist"],
+                                                                },
+                                                            ),
+                                                            html.Span(
+                                                                id="agent-decision-confidence-val",
+                                                                children="94%",
+                                                                className="mono-font",
+                                                                style={
+                                                                    "fontSize": "11px",
+                                                                    "fontWeight": "800",
+                                                                    "color": PALETTE["green"],
+                                                                },
+                                                            ),
+                                                        ],
+                                                        style={"marginBottom": "3px"},
+                                                    ),
+                                                    html.Div(
+                                                        html.Div(
+                                                            id="agent-decision-confidence-bar",
+                                                            style={
+                                                                "width": "94%",
+                                                                "height": "100%",
+                                                                "backgroundColor": PALETTE["green"],
+                                                                "borderRadius": "3px",
+                                                                "transition": "width 0.4s ease",
+                                                            },
+                                                        ),
+                                                        style={
+                                                            "width": "100%",
+                                                            "height": "5px",
+                                                            "backgroundColor": "rgba(255, 255, 255, 0.15)",
+                                                            "borderRadius": "3px",
+                                                            "overflow": "hidden",
+                                                        },
+                                                    ),
+                                                ]
+                                            ),
+                                        ],
+                                        style={
+                                            "backgroundColor": PALETTE["deep"],
+                                            "color": "#fbfcfc",
+                                            "borderLeft": f"6px solid {PALETTE['green']}",
+                                            "borderRadius": "8px",
+                                            "padding": "10px 14px",
+                                            "marginBottom": "8px",
+                                            "boxShadow": "0 4px 10px rgba(5, 91, 101, 0.15)",
+                                        },
+                                    ),
+                                    # Istoric decizii
+                                    html.Div(
+                                        [
+                                            html.Div(
+                                                "ISTORIC DECIZII RECENTE",
+                                                style={
+                                                    "fontSize": "10px",
+                                                    "fontWeight": "700",
+                                                    "color": PALETTE["teal"],
+                                                    "letterSpacing": "0.5px",
+                                                    "marginBottom": "6px",
+                                                },
+                                            ),
+                                            html.Div(
+                                                id="agent-decision-history-list",
+                                                className="custom-scroll",
+                                                style={
+                                                    "maxHeight": "175px",
+                                                    "overflowY": "auto",
+                                                    "display": "flex",
+                                                    "flexDirection": "column",
+                                                    "gap": "5px",
+                                                },
+                                            ),
+                                        ]
+                                    ),
                                 ],
-                                className="glass-card",
-                                style={"width": "40%", "height": "350px"},
+                                className="white-card",
+                                style={
+                                    "width": "38%",
+                                    "height": "340px",
+                                    "display": "flex",
+                                    "flexDirection": "column",
+                                    "justifyContent": "space-between",
+                                },
                             ),
                             # Dreapta: Grafic Presiune & Putere PPER & Energie
                             html.Div(
@@ -761,21 +948,21 @@ def create_demo_dashboard(
                                     dcc.Graph(
                                         id="graph-pressure-power",
                                         config={"displayModeBar": False, "responsive": True},
-                                        style={"width": "100%", "height": "325px"},
+                                        style={"width": "100%", "height": "315px"},
                                     )
                                 ],
-                                className="glass-card",
-                                style={"width": "60%", "height": "350px"},
+                                className="white-card",
+                                style={"width": "62%", "height": "340px"},
                             ),
                         ],
                         style={
                             "display": "flex",
                             "justifyContent": "space-between",
-                            "gap": "12px",
-                            "marginBottom": "12px",
+                            "gap": "10px",
+                            "marginBottom": "8px",
                         },
                     ),
-                    # 4. RÂNDUL DE JOS (3 Grafice / Carduri)
+                    # 4. RÂNDUL DE JOS (Temperaturi, Consum Rețea, Stare Actuatori)
                     html.Div(
                         [
                             # Grafic 1: Temperaturi (°C)
@@ -784,11 +971,11 @@ def create_demo_dashboard(
                                     dcc.Graph(
                                         id="graph-temperatures",
                                         config={"displayModeBar": False, "responsive": True},
-                                        style={"width": "100%", "height": "260px"},
+                                        style={"width": "100%", "height": "235px"},
                                     )
                                 ],
-                                className="glass-card",
-                                style={"width": "36%", "height": "285px"},
+                                className="white-card",
+                                style={"width": "35%", "height": "255px"},
                             ),
                             # Grafic 2: Consum Rețea (kW) & Tarif
                             html.Div(
@@ -796,231 +983,301 @@ def create_demo_dashboard(
                                     dcc.Graph(
                                         id="graph-grid-power",
                                         config={"displayModeBar": False, "responsive": True},
-                                        style={"width": "100%", "height": "260px"},
+                                        style={"width": "100%", "height": "235px"},
                                     )
                                 ],
-                                className="glass-card",
-                                style={"width": "34%", "height": "285px"},
+                                className="white-card",
+                                style={"width": "35%", "height": "255px"},
                             ),
-                            # Card 3: Timeline Actuatori + Jurnal Decizii RL
+                            # Card 3: Stare Actuatori & Siguranță Hardware
                             html.Div(
                                 [
                                     html.Div(
-                                        "JURNAL DECIZII AGENT RL & ACTUATORI",
+                                        "STARE ACTUATORI & SISTEM",
                                         style={
                                             "fontSize": "11px",
-                                            "fontWeight": "700",
-                                            "color": "#94a3b8",
+                                            "fontWeight": "800",
+                                            "color": PALETTE["deep"],
                                             "letterSpacing": "0.5px",
                                             "marginBottom": "8px",
                                         },
                                     ),
-                                    # Timeline simplificat
                                     html.Div(
                                         [
                                             html.Div(
                                                 [
                                                     html.Span(
-                                                        "POMPĂ PPER: ",
+                                                        "Pompă PPER: ",
                                                         style={
                                                             "fontSize": "11px",
-                                                            "fontWeight": "bold",
-                                                            "color": "#94a3b8",
+                                                            "fontWeight": "700",
+                                                            "color": PALETTE["teal"],
                                                         },
                                                     ),
                                                     html.Span(
                                                         id="timeline-pump-status",
                                                         children="OPRITĂ",
-                                                        style={"fontSize": "12px", "fontWeight": "bold"},
+                                                        style={"fontSize": "12px", "fontWeight": "800"},
                                                     ),
                                                 ],
-                                                style={"marginBottom": "4px"},
+                                                style={
+                                                    "marginBottom": "6px",
+                                                    "display": "flex",
+                                                    "justifyContent": "space-between",
+                                                },
                                             ),
                                             html.Div(
                                                 [
                                                     html.Span(
-                                                        "PELTIER UTL: ",
+                                                        "Peltier UTL: ",
                                                         style={
                                                             "fontSize": "11px",
-                                                            "fontWeight": "bold",
-                                                            "color": "#94a3b8",
+                                                            "fontWeight": "700",
+                                                            "color": PALETTE["teal"],
                                                         },
                                                     ),
                                                     html.Span(
                                                         id="timeline-peltier-status",
                                                         children="PORNIT",
+                                                        style={"fontSize": "12px", "fontWeight": "800"},
+                                                    ),
+                                                ],
+                                                style={
+                                                    "marginBottom": "8px",
+                                                    "display": "flex",
+                                                    "justifyContent": "space-between",
+                                                },
+                                            ),
+                                            html.Div(
+                                                [
+                                                    html.Span(
+                                                        "Controler AI: ",
                                                         style={
-                                                            "fontSize": "12px",
-                                                            "fontWeight": "bold",
-                                                            "color": "#34d399",
+                                                            "fontSize": "11px",
+                                                            "fontWeight": "700",
+                                                            "color": PALETTE["teal"],
+                                                        },
+                                                    ),
+                                                    html.Span(
+                                                        "PPO / ONNX (activ)",
+                                                        style={
+                                                            "fontSize": "11px",
+                                                            "fontWeight": "700",
+                                                            "color": PALETTE["deep"],
                                                         },
                                                     ),
                                                 ],
-                                                style={"marginBottom": "8px"},
+                                                style={
+                                                    "marginBottom": "6px",
+                                                    "display": "flex",
+                                                    "justifyContent": "space-between",
+                                                },
                                             ),
-                                        ]
-                                    ),
-                                    # Jurnal ultimele linii
-                                    html.Div(
-                                        id="decision-log-list",
+                                            html.Div(
+                                                [
+                                                    html.Span(
+                                                        "Siguranță: ",
+                                                        style={
+                                                            "fontSize": "11px",
+                                                            "fontWeight": "700",
+                                                            "color": PALETTE["teal"],
+                                                        },
+                                                    ),
+                                                    html.Span(
+                                                        "Watchdog 3.0s · Max 60°C",
+                                                        style={
+                                                            "fontSize": "11px",
+                                                            "fontWeight": "700",
+                                                            "color": PALETTE["green"],
+                                                        },
+                                                    ),
+                                                ],
+                                                style={
+                                                    "marginBottom": "6px",
+                                                    "display": "flex",
+                                                    "justifyContent": "space-between",
+                                                },
+                                            ),
+                                            html.Div(
+                                                [
+                                                    html.Span(
+                                                        "Hardware RPi: ",
+                                                        style={
+                                                            "fontSize": "11px",
+                                                            "fontWeight": "700",
+                                                            "color": PALETTE["teal"],
+                                                        },
+                                                    ),
+                                                    html.Span(
+                                                        "GPIO 23/24, GPIO 25",
+                                                        style={"fontSize": "11px", "color": PALETTE["teal"]},
+                                                    ),
+                                                ],
+                                                style={"display": "flex", "justifyContent": "space-between"},
+                                            ),
+                                        ],
                                         style={
-                                            "backgroundColor": "rgba(7, 10, 19, 0.75)",
-                                            "border": "1px solid rgba(255, 255, 255, 0.05)",
+                                            "backgroundColor": "rgba(224, 229, 233, 0.4)",
+                                            "border": f"1px solid {PALETTE['mist']}",
                                             "borderRadius": "8px",
-                                            "padding": "8px 10px",
-                                            "height": "170px",
-                                            "overflowY": "hidden",
-                                            "fontSize": "11px",
-                                            "lineHeight": "1.5",
-                                            "color": "#cbd5e1",
+                                            "padding": "10px 12px",
                                         },
                                     ),
                                 ],
-                                className="glass-card",
-                                style={"width": "30%", "height": "285px"},
+                                className="white-card",
+                                style={"width": "30%", "height": "255px"},
                             ),
                         ],
                         style={
                             "display": "flex",
                             "justifyContent": "space-between",
-                            "gap": "12px",
-                            "marginBottom": "8px",
+                            "gap": "10px",
+                            "marginBottom": "6px",
                         },
                     ),
-                    # 5. SUBZONA FOOTER
+                    # 5. FOOTER
                     html.Div(
                         [
                             html.Span(
                                 "Raspberry Pi 4 · ONNX Runtime · Inferență locală offline",
-                                style={"fontWeight": "600", "color": "#64748b"},
+                                style={"fontWeight": "600", "color": PALETTE["teal"]},
                             ),
                             html.Span(
-                                " · Comenzi rapide: [Space / →]: Faza următoare | [P]: Pauză | [R]: Reset | [S]: STOP URGENȚĂ",
-                                style={"color": "#475569"},
+                                " · Comenzi rapide: [Space / →]: Faza următoare | [P]: Pauză | [R]: Reset | [S]: STOP URGENȚĂ | [T]: Sumar",
+                                style={"color": PALETTE["teal"]},
                             ),
                             html.Span(
                                 id="footer-phase-status",
                                 children=" · Faza 0/5",
-                                style={"float": "right", "fontWeight": "bold", "color": "#38bdf8"},
+                                style={"float": "right", "fontWeight": "bold", "color": PALETTE["deep"]},
                             ),
                         ],
-                        style={"fontSize": "11px", "color": "#64748b", "padding": "2px 6px"},
+                        style={"fontSize": "11px", "color": PALETTE["teal"], "padding": "2px 4px"},
                     ),
                 ],
-                style={"maxWidth": "1840px", "margin": "0 auto", "padding": "12px 16px"},
+                style={"maxWidth": "1860px", "margin": "0 auto", "padding": "8px 16px"},
             ),
-            # 6. ECRAN DE SUMAR FINAL (FAZA 5 OVERLAY)
+            # 6. OVERLAY SUMAR FAZA 5
             html.Div(
                 id="summary-overlay",
                 children=[
                     html.Div(
-                        [
+                        id="summary-modal-card",
+                        children=[
+                            # Buton X închidere
+                            html.Button(
+                                "X",
+                                id="btn-close-summary-x",
+                                className="btn-close-x",
+                                style={"position": "absolute", "top": "16px", "right": "18px"},
+                            ),
                             html.H2(
-                                "🏆 REZULTATE FINALE GRAVITHERM",
+                                "Rezumatul zilei",
                                 style={
-                                    "fontSize": "30px",
+                                    "fontSize": "28px",
                                     "fontWeight": "800",
-                                    "color": "#38bdf8",
+                                    "color": PALETTE["deep"],
                                     "marginBottom": "4px",
                                     "textAlign": "center",
                                 },
                             ),
                             html.P(
-                                "Validat pe macheta de laborator · Scalabil la clădiri de birouri reale (Simulate-then-scale)",
+                                "Validat pe machetă · scalabil la clădiri reale (simulate-then-scale)",
                                 style={
-                                    "fontSize": "14px",
-                                    "color": "#94a3b8",
+                                    "fontSize": "13px",
+                                    "fontWeight": "600",
+                                    "color": PALETTE["teal"],
                                     "textAlign": "center",
                                     "marginBottom": "24px",
                                 },
                             ),
-                            # Grilă metrici sumar
+                            # 3 Carduri Mari
                             html.Div(
                                 [
-                                    # Card Sumar 1: PPER
+                                    # Card 1: PPER
                                     html.Div(
                                         [
                                             html.Div(
                                                 "ENERGIE RECUPERATĂ PPER",
                                                 style={
-                                                    "fontSize": "12px",
-                                                    "color": "#94a3b8",
+                                                    "fontSize": "11px",
+                                                    "color": PALETTE["teal"],
                                                     "fontWeight": "700",
                                                 },
                                             ),
                                             html.Div(
                                                 id="summary-pper-val",
-                                                children="2.4 Wh (machetă)",
+                                                children="0.60 Wh (machetă)",
                                                 className="mono-font",
                                                 style={
-                                                    "fontSize": "32px",
+                                                    "fontSize": "30px",
                                                     "fontWeight": "800",
-                                                    "color": "#38bdf8",
+                                                    "color": PALETTE["deep"],
                                                     "margin": "8px 0",
                                                 },
                                             ),
                                             html.Div(
                                                 id="summary-pper-scale",
-                                                children="Extrapolat: ~280 Wh/zi clădire 20 etaje",
-                                                style={"fontSize": "12px", "color": "#cbd5e1"},
+                                                children="Extrapolat: 0.21 kWh/zi (clădire 20 etaje)",
+                                                style={"fontSize": "11px", "color": PALETTE["teal"]},
                                             ),
                                         ],
                                         style={
-                                            "backgroundColor": "rgba(30, 41, 59, 0.8)",
-                                            "padding": "18px",
-                                            "borderRadius": "12px",
-                                            "border": "1px solid rgba(255, 255, 255, 0.1)",
+                                            "backgroundColor": "rgba(224, 229, 233, 0.45)",
+                                            "border": f"1px solid {PALETTE['mist']}",
+                                            "padding": "16px",
+                                            "borderRadius": "10px",
                                             "width": "31%",
                                         },
                                     ),
-                                    # Card Sumar 2: Economie Energie & Cost
+                                    # Card 2: Economie
                                     html.Div(
                                         [
                                             html.Div(
                                                 "ECONOMIE NETĂ TOTALĂ",
                                                 style={
-                                                    "fontSize": "12px",
-                                                    "color": "#94a3b8",
+                                                    "fontSize": "11px",
+                                                    "color": PALETTE["teal"],
                                                     "fontWeight": "700",
                                                 },
                                             ),
                                             html.Div(
                                                 id="summary-energy-pct",
-                                                children="-14.2% kWh",
+                                                children="-13.7% kWh",
                                                 className="mono-font",
                                                 style={
-                                                    "fontSize": "32px",
+                                                    "fontSize": "30px",
                                                     "fontWeight": "800",
-                                                    "color": "#10b981",
+                                                    "color": PALETTE["green"],
                                                     "margin": "8px 0",
                                                 },
                                             ),
                                             html.Div(
                                                 id="summary-cost-pct",
-                                                children="Economie cost: -20.4% lei",
+                                                children="Economie cost: -13.7%",
                                                 style={
-                                                    "fontSize": "13px",
+                                                    "fontSize": "12px",
                                                     "fontWeight": "700",
-                                                    "color": "#f59e0b",
+                                                    "color": PALETTE["deep"],
                                                 },
                                             ),
                                         ],
                                         style={
-                                            "backgroundColor": "rgba(30, 41, 59, 0.8)",
-                                            "padding": "18px",
-                                            "borderRadius": "12px",
-                                            "border": "1px solid rgba(255, 255, 255, 0.1)",
+                                            "backgroundColor": "rgba(27, 212, 136, 0.1)",
+                                            "border": f"1px solid {PALETTE['green']}",
+                                            "padding": "16px",
+                                            "borderRadius": "10px",
                                             "width": "31%",
                                         },
                                     ),
-                                    # Card Sumar 3: Impact Mediu CO2
+                                    # Card 3: CO2
                                     html.Div(
                                         [
                                             html.Div(
                                                 "IMPACT CLIMATIC (CO2 EVITAT)",
                                                 style={
-                                                    "fontSize": "12px",
-                                                    "color": "#94a3b8",
+                                                    "fontSize": "11px",
+                                                    "color": PALETTE["teal"],
                                                     "fontWeight": "700",
                                                 },
                                             ),
@@ -1029,22 +1286,22 @@ def create_demo_dashboard(
                                                 children="1.840 kg CO2 / an",
                                                 className="mono-font",
                                                 style={
-                                                    "fontSize": "30px",
+                                                    "fontSize": "28px",
                                                     "fontWeight": "800",
-                                                    "color": "#34d399",
+                                                    "color": PALETTE["deep"],
                                                     "margin": "8px 0",
                                                 },
                                             ),
                                             html.Div(
                                                 "Factor emisie România: 0.26 kg CO2/kWh",
-                                                style={"fontSize": "12px", "color": "#cbd5e1"},
+                                                style={"fontSize": "11px", "color": PALETTE["teal"]},
                                             ),
                                         ],
                                         style={
-                                            "backgroundColor": "rgba(30, 41, 59, 0.8)",
-                                            "padding": "18px",
-                                            "borderRadius": "12px",
-                                            "border": "1px solid rgba(255, 255, 255, 0.1)",
+                                            "backgroundColor": "rgba(224, 229, 233, 0.45)",
+                                            "border": f"1px solid {PALETTE['mist']}",
+                                            "padding": "16px",
+                                            "borderRadius": "10px",
                                             "width": "31%",
                                         },
                                     ),
@@ -1052,47 +1309,145 @@ def create_demo_dashboard(
                                 style={
                                     "display": "flex",
                                     "justifyContent": "space-between",
-                                    "marginBottom": "24px",
+                                    "marginBottom": "28px",
                                 },
                             ),
-                            # Butoane închidere overlay / reluare
+                            # Butoane jos
                             html.Div(
                                 [
                                     html.Button(
-                                        "Închide Sumar (Reia Demo / Reset)",
+                                        "Reia demo",
+                                        id="btn-overlay-replay",
+                                        className="btn-outline-primary",
+                                    ),
+                                    html.Button(
+                                        "Închide și vezi graficele zilei",
                                         id="btn-close-summary",
-                                        className="btn-ctrl",
                                         style={
-                                            "fontSize": "14px",
-                                            "padding": "10px 24px",
-                                            "marginRight": "12px",
+                                            "backgroundColor": PALETTE["deep"],
+                                            "color": "#fbfcfc",
+                                            "border": "none",
+                                            "borderRadius": "8px",
+                                            "padding": "10px 22px",
+                                            "fontSize": "13px",
+                                            "fontWeight": "700",
+                                            "cursor": "pointer",
                                         },
                                     ),
                                 ],
-                                style={"textAlign": "center"},
+                                style={
+                                    "display": "flex",
+                                    "justifyContent": "space-between",
+                                    "alignItems": "center",
+                                },
                             ),
                         ],
                         style={
-                            "backgroundColor": "#0b1120",
-                            "border": "2px solid #38bdf8",
-                            "borderRadius": "18px",
-                            "maxWidth": "950px",
+                            "backgroundColor": "#ffffff",
+                            "border": f"2px solid {PALETTE['deep']}",
+                            "borderRadius": "16px",
+                            "maxWidth": "860px",
                             "width": "90%",
-                            "padding": "32px",
-                            "boxShadow": "0 25px 50px -12px rgba(0, 0, 0, 0.75)",
+                            "padding": "32px 36px",
+                            "position": "relative",
+                            "boxShadow": "0 25px 50px rgba(5, 91, 101, 0.25)",
                         },
                     )
                 ],
                 style={
-                    "display": "none",  # ascuns implicit, devine flex la Faza 5
+                    "display": "none",
                     "position": "fixed",
                     "top": "0",
                     "left": "0",
                     "width": "100vw",
                     "height": "100vh",
-                    "backgroundColor": "rgba(3, 7, 18, 0.85)",
+                    "backgroundColor": "rgba(5, 91, 101, 0.45)",
                     "backdropFilter": "blur(8px)",
                     "zIndex": "9999",
+                    "alignItems": "center",
+                    "justifyContent": "center",
+                },
+            ),
+            # 7. POPOVER CONFIRMARE REIA DEMO
+            html.Div(
+                id="reset-confirm-popover",
+                children=[
+                    html.Div(
+                        [
+                            html.Div(
+                                "Confirmare reluare",
+                                style={
+                                    "fontSize": "11px",
+                                    "fontWeight": "700",
+                                    "color": PALETTE["teal"],
+                                    "marginBottom": "4px",
+                                },
+                            ),
+                            html.Div(
+                                "Sigur reiei demo-ul de la Faza 0?",
+                                style={
+                                    "fontSize": "15px",
+                                    "fontWeight": "800",
+                                    "color": PALETTE["deep"],
+                                    "marginBottom": "16px",
+                                },
+                            ),
+                            html.Div(
+                                [
+                                    html.Button(
+                                        "Da, reia",
+                                        id="btn-confirm-reset-yes",
+                                        style={
+                                            "backgroundColor": PALETTE["deep"],
+                                            "color": "#ffffff",
+                                            "border": "none",
+                                            "borderRadius": "6px",
+                                            "padding": "7px 16px",
+                                            "fontWeight": "700",
+                                            "cursor": "pointer",
+                                            "marginRight": "10px",
+                                            "fontSize": "13px",
+                                        },
+                                    ),
+                                    html.Button(
+                                        "Nu, anulează",
+                                        id="btn-confirm-reset-no",
+                                        style={
+                                            "backgroundColor": PALETTE["mist"],
+                                            "color": PALETTE["deep"],
+                                            "border": "none",
+                                            "borderRadius": "6px",
+                                            "padding": "7px 16px",
+                                            "fontWeight": "700",
+                                            "cursor": "pointer",
+                                            "fontSize": "13px",
+                                        },
+                                    ),
+                                ],
+                                style={"display": "flex", "justifyContent": "flex-end"},
+                            ),
+                        ],
+                        style={
+                            "backgroundColor": "#ffffff",
+                            "border": f"2px solid {PALETTE['deep']}",
+                            "borderRadius": "12px",
+                            "padding": "18px 22px",
+                            "boxShadow": "0 20px 50px rgba(5, 91, 101, 0.3)",
+                            "maxWidth": "340px",
+                            "width": "90%",
+                        },
+                    )
+                ],
+                style={
+                    "display": "none",
+                    "position": "fixed",
+                    "top": "0",
+                    "left": "0",
+                    "width": "100vw",
+                    "height": "100vh",
+                    "backgroundColor": "rgba(5, 91, 101, 0.3)",
+                    "backdropFilter": "blur(4px)",
+                    "zIndex": "10010",
                     "alignItems": "center",
                     "justifyContent": "center",
                 },
@@ -1100,21 +1455,34 @@ def create_demo_dashboard(
         ]
     )
 
-    # Clientside Callback pentru ascultarea tastelor din fereastra de browser
+    # Clientside Callback pentru ascultarea tastelor și click-ului pe backdrop
     clientside_callback(
         """
         function(n_intervals) {
             if (!window._gravitherm_listener_installed) {
                 window._gravitherm_listener_installed = true;
+
+                // Ascultare evenimente tastatură
                 window.addEventListener('keydown', function(event) {
                     var key = event.key;
                     if (key === ' ' || key === 'ArrowRight' || key === 'p' || key === 'P' || 
-                        key === 'r' || key === 'R' || key === 's' || key === 'S') {
+                        key === 'r' || key === 'R' || key === 's' || key === 'S' ||
+                        key === 'Escape' || key === 't' || key === 'T') {
                         event.preventDefault();
                         var input = document.getElementById('key-press-input');
                         if (input) {
                             input.value = key + '_' + Date.now();
                             input.dispatchEvent(new Event('input', { bubbles: true }));
+                        }
+                    }
+                });
+
+                // Click pe fundalul overlay-ului pentru închidere
+                document.addEventListener('click', function(event) {
+                    if (event.target && event.target.id === 'summary-overlay') {
+                        var btnClose = document.getElementById('btn-close-summary-x');
+                        if (btnClose) {
+                            btnClose.click();
                         }
                     }
                 });
@@ -1126,7 +1494,108 @@ def create_demo_dashboard(
         Input("demo-interval", "n_intervals"),
     )
 
-    # Callback pentru tratarea comenzilor din tastatură și butoane UI
+    # Callback pentru gestionarea stărilor de modal sumar și popover de reset
+    @app.callback(
+        [
+            Output("summary-modal-open-store", "data"),
+            Output("reset-confirm-open-store", "data"),
+            Output("last-phase-id-store", "data"),
+        ],
+        [
+            Input("btn-close-summary-x", "n_clicks"),
+            Input("btn-close-summary", "n_clicks"),
+            Input("btn-open-summary", "n_clicks"),
+            Input("btn-overlay-replay", "n_clicks"),
+            Input("btn-top-replay", "n_clicks"),
+            Input("btn-confirm-reset-yes", "n_clicks"),
+            Input("btn-confirm-reset-no", "n_clicks"),
+            Input("demo-interval", "n_intervals"),
+            Input("key-press-input", "value"),
+            Input("demo-url", "search"),
+        ],
+        [
+            State("summary-modal-open-store", "data"),
+            State("reset-confirm-open-store", "data"),
+            State("last-phase-id-store", "data"),
+        ],
+        prevent_initial_call=False,
+    )
+    def handle_modals_state(
+        btn_close_x: int | None,
+        btn_close_sum: int | None,
+        btn_open_sum: int | None,
+        btn_overlay_replay: int | None,
+        btn_top_replay: int | None,
+        btn_confirm_yes: int | None,
+        btn_confirm_no: int | None,
+        n_intervals: int | None,
+        key_value: str | None,
+        url_search: str | None,
+        modal_open: bool,
+        confirm_open: bool,
+        last_phase_id: int,
+    ) -> tuple[bool, bool, int]:
+        ctx = dash.callback_context
+        current_status = engine.get_status_dict()
+        current_phase = current_status["phase_id"]
+
+        if not ctx.triggered:
+            # Pornire inițială
+            if url_search and ("summary=closed" in url_search or "modal=0" in url_search):
+                return False, False, current_phase
+            return False, False, current_phase
+
+        triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
+
+        # 0. Tratare parametri URL
+        if triggered_id == "demo-url" and url_search:
+            if "summary=closed" in url_search or "modal=0" in url_search:
+                return False, False, current_phase
+            elif "summary=open" in url_search or "modal=1" in url_search:
+                return True, False, current_phase
+
+        # 1. Tratare taste Esc și T
+        if triggered_id == "key-press-input" and key_value:
+            key_code = key_value.split("_")[0]
+            if key_code == "Escape":
+                return False, False, current_phase
+            elif key_code in ("t", "T"):
+                return True, False, current_phase
+
+        # 2. Tratare butoane închidere sumar
+        if triggered_id in ("btn-close-summary-x", "btn-close-summary"):
+            return False, False, current_phase
+
+        # 3. Tratare buton deschidere sumar
+        if triggered_id == "btn-open-summary":
+            return True, False, current_phase
+
+        # 4. Solicitare confirmare reia demo
+        if triggered_id in ("btn-overlay-replay", "btn-top-replay"):
+            return modal_open, True, current_phase
+
+        # 5. Confirmare reset YES
+        if triggered_id == "btn-confirm-reset-yes":
+            engine.reset()
+            return False, False, 0
+
+        # 6. Anulare confirmare reset NO
+        if triggered_id == "btn-confirm-reset-no":
+            return modal_open, False, current_phase
+
+        # 7. Auto-deschidere la intrarea în Faza 5
+        if current_phase == 5 and last_phase_id != 5:
+            if url_search and ("summary=closed" in url_search or "modal=0" in url_search):
+                return False, False, 5
+            return True, False, 5
+
+        # Dacă s-a resetat între timp
+        if current_phase == 0 and last_phase_id == 5:
+            return False, False, 0
+
+        return modal_open, confirm_open, current_phase
+
+    # Callback pentru tratarea comenzilor hardware/engine din tastatură și butoane UI
     @app.callback(
         Output("key-press-input", "value"),
         [
@@ -1135,7 +1604,6 @@ def create_demo_dashboard(
             Input("btn-pause", "n_clicks"),
             Input("btn-reset", "n_clicks"),
             Input("btn-stop", "n_clicks"),
-            Input("btn-close-summary", "n_clicks"),
         ],
         prevent_initial_call=True,
     )
@@ -1145,7 +1613,6 @@ def create_demo_dashboard(
         btn_pause: int | None,
         btn_reset: int | None,
         btn_stop: int | None,
-        btn_close_sum: int | None,
     ) -> str:
         ctx = dash.callback_context
         if not ctx.triggered:
@@ -1155,12 +1622,13 @@ def create_demo_dashboard(
 
         if triggered_id == "key-press-input" and key_value:
             key_code = key_value.split("_")[0]
-            engine.handle_command_string(key_code)
+            if key_code not in ("Escape", "t", "T"):
+                engine.handle_command_string(key_code)
         elif triggered_id == "btn-next":
             engine.next_phase()
         elif triggered_id == "btn-pause":
             engine.toggle_pause()
-        elif triggered_id == "btn-reset" or triggered_id == "btn-close-summary":
+        elif triggered_id == "btn-reset":
             engine.reset()
         elif triggered_id == "btn-stop":
             engine.emergency_stop()
@@ -1172,11 +1640,14 @@ def create_demo_dashboard(
         [
             Output("clock-display", "children"),
             Output("phase-badge", "children"),
+            Output("pause-badge", "style"),
             Output("waiting-for-space-msg", "children"),
             Output("pill-pump", "children"),
             Output("pill-pump", "style"),
             Output("pill-utl", "children"),
             Output("pill-utl", "style"),
+            Output("btn-open-summary", "style"),
+            Output("btn-top-replay", "style"),
             Output("kpi-decision-text", "children"),
             Output("kpi-decision-sub", "children"),
             Output("kpi-energy-pper", "children"),
@@ -1186,111 +1657,133 @@ def create_demo_dashboard(
             Output("kpi-cost-pct", "children"),
             Output("kpi-comfort-rl", "children"),
             Output("kpi-comfort-classic", "children"),
+            Output("agent-decision-action", "children"),
+            Output("agent-decision-reason", "children"),
+            Output("agent-decision-confidence-val", "children"),
+            Output("agent-decision-confidence-bar", "style"),
+            Output("agent-decision-history-list", "children"),
             Output("timeline-pump-status", "children"),
             Output("timeline-pump-status", "style"),
             Output("timeline-peltier-status", "children"),
             Output("timeline-peltier-status", "style"),
-            Output("decision-log-list", "children"),
             Output("footer-phase-status", "children"),
-            Output("building-svg-container", "children"),
             Output("graph-pressure-power", "figure"),
             Output("graph-temperatures", "figure"),
             Output("graph-grid-power", "figure"),
             Output("summary-overlay", "style"),
+            Output("reset-confirm-popover", "style"),
             Output("summary-pper-val", "children"),
             Output("summary-pper-scale", "children"),
             Output("summary-energy-pct", "children"),
             Output("summary-cost-pct", "children"),
             Output("summary-co2-val", "children"),
         ],
-        Input("demo-interval", "n_intervals"),
+        [
+            Input("demo-interval", "n_intervals"),
+            Input("summary-modal-open-store", "data"),
+            Input("reset-confirm-open-store", "data"),
+        ],
     )
-    def update_dashboard_views(n_intervals: int) -> tuple[Any, ...]:
+    def update_dashboard_views(
+        n_intervals: int,
+        modal_open: bool,
+        confirm_open: bool,
+    ) -> tuple[Any, ...]:
         status = engine.get_status_dict()
         history = list(data_model.history)
         last_pt: TelemetryPoint | None = history[-1] if history else None
 
-        # 1. Ceas & Fază
-        sim_h = float(status["sim_hour"])
-        h_int = int(sim_h)
-        m_int = int((sim_h - h_int) * 60)
-        clock_str = f"{h_int:02d}:{m_int:02d}" if h_int < 24 else "24:00"
-        phase_badge_str = status["phase_short"]
+        # 1. Ceas & Badge Fază
+        clock_str = status["sim_time_str"]
+        phase_badge_str = f"Faza {status['phase_id']} · {status['phase_name']}"
 
-        if status["state"] == EngineState.PHASE_COMPLETED.value:
-            waiting_msg = html.Span(
-                "▶ Faza încheiată · Apasă Space pentru faza următoare",
-                className="waiting-badge",
-                style={"color": "#38bdf8", "fontWeight": "800"},
-            )
-        elif status["state"] == EngineState.PAUSED.value:
-            waiting_msg = html.Span(
-                "⏸ PAUZĂ (Apasă P pentru reluare)", style={"color": "#f59e0b", "fontWeight": "700"}
-            )
-        elif status["state"] == EngineState.EMERGENCY_STOPPED.value:
-            waiting_msg = html.Span(
-                "⛔ STOP DE URGENȚĂ ACTIV (Apasă R)", style={"color": "#ef4444", "fontWeight": "800"}
-            )
-        elif status["state"] == EngineState.FINISHED.value:
-            waiting_msg = html.Span(
-                "🏆 Demo completat · 24h simulate", style={"color": "#10b981", "fontWeight": "800"}
-            )
+        # Indicator Pauză (afișat lângă ceas)
+        is_paused = status["state"] == EngineState.PAUSED.value
+        pause_badge_style = {
+            "fontSize": "12px",
+            "fontWeight": "800",
+            "backgroundColor": PALETTE["yellow"],
+            "color": PALETTE["deep"],
+            "padding": "4px 10px",
+            "borderRadius": "6px",
+            "marginLeft": "8px",
+            "display": "inline-block" if is_paused else "none",
+        }
+
+        # Mesaj navigare
+        if status["waiting_for_next"]:
+            if status["phase_id"] < 5:
+                waiting_msg = "Fază încheiată · Apasă Space pentru faza următoare"
+            else:
+                waiting_msg = "Demo finalizat · 24h simulate"
         else:
-            waiting_msg = (
-                f"Faza în desfășurare ({status['phase_elapsed_s']:.0f}s / {status['phase_duration_s']:.0f}s)"
-            )
+            waiting_msg = f"Faza {status['phase_id']} în desfășurare ({status['wall_elapsed_s']:.0f}s)"
 
-        # 2. Pastile Actuatori
-        pump_active = bool(status["pump_active"])
-        peltier_active = bool(status["peltier_active"])
+        # 2. Pastile Status Actuatori Top-Right
+        pump_active = status["actual_pump_on"]
+        pelt_active = status["actual_peltier_on"]
 
+        pill_pump_text = f"POMPĂ ON ({status['pump_speed_pct']:.0f}%)" if pump_active else "POMPĂ OFF"
         if pump_active:
-            pill_pump_text = "POMPĂ ON"
             pill_pump_style = {
                 "fontSize": "11px",
-                "fontWeight": "700",
-                "backgroundColor": "#0369a1",
-                "color": "#38bdf8",
+                "fontWeight": "800",
+                "backgroundColor": PALETTE["green"],
+                "color": PALETTE["deep"],
                 "padding": "4px 8px",
                 "borderRadius": "6px",
                 "marginRight": "6px",
             }
         else:
-            pill_pump_text = "POMPĂ OFF"
             pill_pump_style = {
                 "fontSize": "11px",
                 "fontWeight": "700",
-                "backgroundColor": "#1e293b",
-                "color": "#94a3b8",
+                "backgroundColor": "rgba(255,255,255,0.12)",
+                "color": PALETTE["sage"],
                 "padding": "4px 8px",
                 "borderRadius": "6px",
                 "marginRight": "6px",
             }
 
-        if peltier_active:
-            pill_utl_text = "UTL ON"
+        pill_utl_text = "UTL ON" if pelt_active else "UTL OFF"
+        if pelt_active:
             pill_utl_style = {
                 "fontSize": "11px",
-                "fontWeight": "700",
-                "backgroundColor": "#064e3b",
-                "color": "#34d399",
+                "fontWeight": "800",
+                "backgroundColor": PALETTE["teal"],
+                "color": "#ffffff",
                 "padding": "4px 8px",
                 "borderRadius": "6px",
-                "marginRight": "12px",
+                "marginRight": "10px",
             }
         else:
-            pill_utl_text = "UTL OFF"
             pill_utl_style = {
                 "fontSize": "11px",
                 "fontWeight": "700",
-                "backgroundColor": "#1e293b",
-                "color": "#94a3b8",
+                "backgroundColor": "rgba(255,255,255,0.12)",
+                "color": PALETTE["sage"],
                 "padding": "4px 8px",
                 "borderRadius": "6px",
-                "marginRight": "12px",
+                "marginRight": "10px",
             }
 
-        # 3. KPI-uri
+        # Vizibilitate butoane Sumar și Reia demo în top bar
+        is_phase_5 = status["phase_id"] == 5
+        btn_open_sum_style = {
+            "marginRight": "4px",
+            "display": "inline-block" if (is_phase_5 and not modal_open) else "none",
+            "backgroundColor": PALETTE["teal"],
+            "borderColor": PALETTE["teal"],
+        }
+        btn_top_replay_style = {
+            "marginRight": "4px",
+            "display": "inline-block" if (is_phase_5 and not modal_open) else "none",
+            "backgroundColor": "rgba(27, 212, 136, 0.25)",
+            "borderColor": PALETTE["green"],
+            "color": "#ffffff",
+        }
+
+        # 3. KPI-uri (Rândul 2)
         if last_pt:
             kpi_dec_text = last_pt.phase_decision
             if cfg.fixed_tariff_enabled:
@@ -1298,7 +1791,7 @@ def create_demo_dashboard(
             else:
                 kpi_dec_sub = f"Tarif: {last_pt.tariff_lei_kwh:.2f} lei/kWh ({last_pt.tariff_zone})"
             kpi_energy_pper = f"{last_pt.energy_pper_wh:.2f}"
-            kpi_energy_extrap = f"Extrapolat: {last_pt.energy_pper_real_kwh:.2f} kWh/zi"
+            kpi_energy_extrap = f"Extrapolat: {last_pt.energy_pper_real_kwh:.2f} kWh/zi clădire 60m"
             kpi_energy_savings = f"{last_pt.energy_savings_pct:.1f}"
             saved_lei = max(0.0, last_pt.cost_grid_classic_lei - last_pt.cost_grid_rl_lei)
             kpi_cost_saved = f"{saved_lei:.2f}"
@@ -1312,64 +1805,62 @@ def create_demo_dashboard(
             else:
                 kpi_dec_sub = "Tarif: 0.45 lei/kWh (Noapte)"
             kpi_energy_pper = "0.00"
-            kpi_energy_extrap = "Extrapolat: 0.00 kWh/zi"
+            kpi_energy_extrap = "Extrapolat: 0.00 kWh/zi clădire 60m"
             kpi_energy_savings = "0.0"
             kpi_cost_saved = "0.00"
             kpi_cost_pct = "Economie cost: 0.0%"
             kpi_comfort_rl = "100.0"
             kpi_comfort_classic = "Control clasic: 100.0%"
 
-        # 4. Timeline text
-        tl_pump_str = f"PORNITĂ ({status['pump_speed_pct']:.0f}%)" if pump_active else "OPRITĂ"
-        tl_pump_col = (
-            {"color": "#38bdf8", "fontSize": "12px", "fontWeight": "bold"}
-            if pump_active
-            else {
-                "color": "#94a3b8",
-                "fontSize": "12px",
-                "fontWeight": "bold",
-            }
-        )
-        tl_pelt_str = "PORNIT (Răcire UTL)" if peltier_active else "OPRIT"
-        tl_pelt_col = (
-            {"color": "#34d399", "fontSize": "12px", "fontWeight": "bold"}
-            if peltier_active
-            else {
-                "color": "#94a3b8",
-                "fontSize": "12px",
-                "fontWeight": "bold",
-            }
-        )
-
-        # 5. Jurnal Decizii
-        recent_logs = list(data_model.decision_log)[-5:]
-        log_elements = [
-            html.Div(
-                entry, style={"marginBottom": "6px", "borderBottom": "1px solid rgba(255, 255, 255, 0.05)"}
-            )
-            for entry in reversed(recent_logs)
-        ]
-
-        # 6. Footer status
-        footer_status = f" · Faza {status['phase_id']}/5 ({status['phase_name']})"
-
-        # 7. Schema SVG
-        svg_div = render_building_svg(last_pt)
-
-        # 8. Generare Grafice Plotly (Axa fixă 00:00 - 24:00, fără pâlpâit)
-        hours_x = [pt.sim_hour for pt in history]
-
-        # Template grafice dark
-        layout_base = {
-            "template": "plotly_dark",
-            "paper_bgcolor": "rgba(0,0,0,0)",
-            "plot_bgcolor": "rgba(15, 23, 42, 0.6)",
-            "font": {"family": "Plus Jakarta Sans, sans-serif", "color": "#94a3b8", "size": 11},
-            "margin": {"l": 45, "r": 35, "t": 35, "b": 35},
-            "uirevision": "constant_demo_view",
+        # 4. Panoul Deciziile Agentului AI (Rândul Central Stânga)
+        curr_decision = data_model.get_current_decision()
+        agent_dec_action = curr_decision.get("action_text", "STANDBY")
+        agent_dec_reason = curr_decision.get("reason", "stare nominală sistem")
+        conf_pct = int(curr_decision.get("confidence_pct", 95))
+        agent_dec_conf_val = f"{conf_pct}%"
+        agent_dec_conf_bar_style = {
+            "width": f"{conf_pct}%",
+            "height": "100%",
+            "backgroundColor": PALETTE["green"],
+            "borderRadius": "3px",
+            "transition": "width 0.4s ease",
         }
 
-        # --- Grafic Central: Presiune Coloană (kPa) & Putere PPER (W) ---
+        # Istoric decizii
+        recent_decs = data_model.get_recent_decisions(limit=8)
+        agent_dec_history_elements = [render_decision_history_item(rec) for rec in recent_decs]
+
+        # 5. Stare Actuatori (Rândul de Jos Dreapta)
+        tl_pump_str = f"PORNITĂ ({status['pump_speed_pct']:.0f}%)" if pump_active else "OPRITĂ"
+        tl_pump_col = (
+            {"color": PALETTE["green"], "fontSize": "12px", "fontWeight": "800"}
+            if pump_active
+            else {"color": PALETTE["teal"], "fontSize": "12px", "fontWeight": "700"}
+        )
+
+        tl_pelt_str = "PORNIT" if pelt_active else "OPRIT"
+        tl_pelt_col = (
+            {"color": PALETTE["deep"], "fontSize": "12px", "fontWeight": "800"}
+            if pelt_active
+            else {"color": PALETTE["teal"], "fontSize": "12px", "fontWeight": "700"}
+        )
+
+        # 6. Footer Status
+        footer_status = f" · Faza {status['phase_id']}/5 · {status['phase_name']}"
+
+        # 7. Grafice Plotly (Temă luminoasă GraviTherm)
+        hours_x = [pt.sim_hour for pt in history] if history else []
+
+        layout_base = {
+            "template": "gravitherm",
+            "margin": {"l": 40, "r": 20, "t": 32, "b": 28},
+            "paper_bgcolor": "rgba(0,0,0,0)",
+            "plot_bgcolor": "rgba(0,0,0,0)",
+            "font": {"family": "Plus Jakarta Sans, sans-serif", "color": PALETTE["deep"]},
+            "hovermode": "x unified",
+        }
+
+        # --- Grafic Central Dreapta: Presiune & Putere PPER ---
         fig_pper = go.Figure()
         if history:
             fig_pper.add_trace(
@@ -1377,7 +1868,7 @@ def create_demo_dashboard(
                     x=hours_x,
                     y=[pt.pressure_kpa for pt in history],
                     name="Presiune coloană (kPa)",
-                    line={"color": "#0284c7", "width": 2.5},
+                    line={"color": PALETTE["teal"], "width": 2},
                     yaxis="y1",
                 )
             )
@@ -1385,8 +1876,10 @@ def create_demo_dashboard(
                 go.Scatter(
                     x=hours_x,
                     y=[pt.power_pper_extrapolated_w for pt in history],
-                    name="Putere PPER extrapolat (W)",
-                    line={"color": "#10b981", "width": 2},
+                    name="Putere PPER clădire reală (W)",
+                    line={"color": PALETTE["green"], "width": 3},
+                    fill="tozeroy",
+                    fillcolor="rgba(27, 212, 136, 0.15)",
                     yaxis="y2",
                 )
             )
@@ -1395,7 +1888,7 @@ def create_demo_dashboard(
                     x=hours_x,
                     y=[pt.energy_pper_wh for pt in history],
                     name="Energie machetă cumulat (Wh)",
-                    line={"color": "#f59e0b", "width": 1.5, "dash": "dot"},
+                    line={"color": PALETTE["deep"], "width": 1.5, "dash": "dot"},
                     yaxis="y1",
                 )
             )
@@ -1404,21 +1897,28 @@ def create_demo_dashboard(
             **layout_base,
             title={
                 "text": "HIDRAULICĂ COLOANĂ & RECUPERARE ENERGIE PPER",
-                "font": {"size": 12, "color": "#f8fafc"},
+                "font": {"size": 12, "color": PALETTE["deep"], "weight": 700},
             },
             xaxis={
                 "title": "Ora simulată (00:00 - 24:00)",
                 "range": [0, 24],
                 "dtick": 3,
-                "gridcolor": "rgba(255,255,255,0.05)",
+                "gridcolor": PALETTE["mist"],
+                "tickfont": {"size": 10, "color": PALETTE["teal"]},
             },
-            yaxis={"title": "Presiune (kPa) / Wh", "range": [0, 22], "gridcolor": "rgba(255,255,255,0.05)"},
+            yaxis={
+                "title": "Presiune (kPa) / Wh",
+                "range": [0, 22],
+                "gridcolor": PALETTE["mist"],
+                "tickfont": {"size": 10, "color": PALETTE["teal"]},
+            },
             yaxis2={
                 "title": "Putere clădire reală (W)",
                 "overlaying": "y",
                 "side": "right",
                 "range": [0, 26],
                 "showgrid": False,
+                "tickfont": {"size": 10, "color": PALETTE["teal"]},
             },
             legend={
                 "orientation": "h",
@@ -1433,16 +1933,16 @@ def create_demo_dashboard(
         # --- Grafic Jos Stânga: Temperaturi (°C) ---
         fig_temp = go.Figure()
 
-        # Bandă de confort termic 21-24°C umbrită verde
+        # Bandă de confort termic 21-24°C umbrită verde pastel
         fig_temp.add_hrect(
             y0=cfg.comfort_min_c,
             y1=cfg.comfort_max_c,
-            fillcolor="rgba(16, 185, 129, 0.12)",
+            fillcolor="rgba(27, 212, 136, 0.08)",
             line_width=1,
-            line_color="rgba(16, 185, 129, 0.3)",
+            line_color="rgba(27, 212, 136, 0.35)",
             annotation_text="Banda de confort (21-24°C)",
             annotation_position="bottom right",
-            annotation_font={"size": 9, "color": "#34d399"},
+            annotation_font={"size": 9, "color": PALETTE["deep"]},
         )
 
         if history:
@@ -1451,7 +1951,7 @@ def create_demo_dashboard(
                     x=hours_x,
                     y=[pt.temp_int_rl for pt in history],
                     name="Interior RL (GraviTherm)",
-                    line={"color": "#10b981", "width": 2.5},
+                    line={"color": PALETTE["deep"], "width": 3},
                 )
             )
             fig_temp.add_trace(
@@ -1459,7 +1959,7 @@ def create_demo_dashboard(
                     x=hours_x,
                     y=[pt.temp_int_classic for pt in history],
                     name="Interior Control clasic",
-                    line={"color": "#94a3b8", "width": 2, "dash": "dash"},
+                    line={"color": PALETTE["sage"], "width": 2, "dash": "dot"},
                 )
             )
             fig_temp.add_trace(
@@ -1467,7 +1967,7 @@ def create_demo_dashboard(
                     x=hours_x,
                     y=[pt.temp_ext for pt in history],
                     name="Exterior (Caniculă)",
-                    line={"color": "#f97316", "width": 1.5},
+                    line={"color": PALETTE["coral"], "width": 1.5},
                 )
             )
             fig_temp.add_trace(
@@ -1475,15 +1975,28 @@ def create_demo_dashboard(
                     x=hours_x,
                     y=[pt.temp_utl_return for pt in history],
                     name="Retur buclă UTL",
-                    line={"color": "#06d6a0", "width": 1.5, "dash": "dot"},
+                    line={"color": PALETTE["teal"], "width": 1.5, "dash": "dash"},
                 )
             )
 
         fig_temp.update_layout(
             **layout_base,
-            title={"text": "TEMPERATURI · RL vs. CONTROL CLASIC", "font": {"size": 12, "color": "#f8fafc"}},
-            xaxis={"range": [0, 24], "dtick": 4, "gridcolor": "rgba(255,255,255,0.05)"},
-            yaxis={"title": "°C", "range": [6, 36], "gridcolor": "rgba(255,255,255,0.05)"},
+            title={
+                "text": "TEMPERATURI · RL vs. CONTROL CLASIC",
+                "font": {"size": 12, "color": PALETTE["deep"], "weight": 700},
+            },
+            xaxis={
+                "range": [0, 24],
+                "dtick": 4,
+                "gridcolor": PALETTE["mist"],
+                "tickfont": {"size": 10, "color": PALETTE["teal"]},
+            },
+            yaxis={
+                "title": "°C",
+                "range": [6, 36],
+                "gridcolor": PALETTE["mist"],
+                "tickfont": {"size": 10, "color": PALETTE["teal"]},
+            },
             legend={
                 "orientation": "h",
                 "yanchor": "bottom",
@@ -1497,23 +2010,16 @@ def create_demo_dashboard(
         # --- Grafic Jos Mijloc: Consum Rețea (kW) & Benzi Tarif ---
         fig_grid = go.Figure()
 
-        # Evidențiere bandă vârf (15:00 - 18:00)
-        peak_annotation = (
-            "VÂRF CERERE REȚEA (15:00 - 18:00)" if cfg.fixed_tariff_enabled else "VÂRF TARIF (1.70 lei)"
-        )
-        peak_fill = "rgba(56, 189, 248, 0.12)" if cfg.fixed_tariff_enabled else "rgba(239, 68, 68, 0.15)"
-        peak_border = "rgba(56, 189, 248, 0.35)" if cfg.fixed_tariff_enabled else "rgba(239, 68, 68, 0.4)"
-        peak_font_color = "#38bdf8" if cfg.fixed_tariff_enabled else "#f87171"
-
+        # Evidențiere bandă vârf cerere (15:00 - 18:00) cu tentă gălbuie/coral discretă
         fig_grid.add_vrect(
             x0=15.0,
             x1=18.0,
-            fillcolor=peak_fill,
+            fillcolor="rgba(245, 184, 61, 0.15)",
             line_width=1,
-            line_color=peak_border,
-            annotation_text=peak_annotation,
+            line_color="rgba(245, 184, 61, 0.4)",
+            annotation_text="VÂRF CERERE REȚEA (15:00 - 18:00)",
             annotation_position="top left",
-            annotation_font={"size": 9, "color": peak_font_color},
+            annotation_font={"size": 9, "color": PALETTE["deep"]},
         )
 
         if history:
@@ -1522,7 +2028,7 @@ def create_demo_dashboard(
                     x=hours_x,
                     y=[pt.grid_power_rl_kw for pt in history],
                     name="Consum net RL (kW)",
-                    line={"color": "#10b981", "width": 2.5},
+                    line={"color": PALETTE["deep"], "width": 3},
                 )
             )
             fig_grid.add_trace(
@@ -1530,7 +2036,7 @@ def create_demo_dashboard(
                     x=hours_x,
                     y=[pt.grid_power_classic_kw for pt in history],
                     name="Consum Chiller clasic (kW)",
-                    line={"color": "#94a3b8", "width": 2, "dash": "dot"},
+                    line={"color": PALETTE["sage"], "width": 2, "dash": "dot"},
                 )
             )
 
@@ -1541,9 +2047,19 @@ def create_demo_dashboard(
         )
         fig_grid.update_layout(
             **layout_base,
-            title={"text": grid_title, "font": {"size": 12, "color": "#f8fafc"}},
-            xaxis={"range": [0, 24], "dtick": 4, "gridcolor": "rgba(255,255,255,0.05)"},
-            yaxis={"title": "kW import rețea", "range": [0, 14], "gridcolor": "rgba(255,255,255,0.05)"},
+            title={"text": grid_title, "font": {"size": 12, "color": PALETTE["deep"], "weight": 700}},
+            xaxis={
+                "range": [0, 24],
+                "dtick": 4,
+                "gridcolor": PALETTE["mist"],
+                "tickfont": {"size": 10, "color": PALETTE["teal"]},
+            },
+            yaxis={
+                "title": "kW import rețea",
+                "range": [0, 14],
+                "gridcolor": PALETTE["mist"],
+                "tickfont": {"size": 10, "color": PALETTE["teal"]},
+            },
             legend={
                 "orientation": "h",
                 "yanchor": "bottom",
@@ -1554,18 +2070,31 @@ def create_demo_dashboard(
             },
         )
 
-        # 9. Verificare Sumar Final Faza 5 Overlay
-        is_phase_5 = status["phase_id"] == 5
+        # 8. Stiluri Overlay Sumar Faza 5 și Popover Confirmare
         summary_style: dict[str, str] = {
-            "display": "flex" if is_phase_5 else "none",
+            "display": "flex" if modal_open else "none",
             "position": "fixed",
             "top": "0",
             "left": "0",
             "width": "100vw",
             "height": "100vh",
-            "backgroundColor": "rgba(3, 7, 18, 0.88)",
+            "backgroundColor": "rgba(5, 91, 101, 0.45)",
             "backdropFilter": "blur(8px)",
             "zIndex": "9999",
+            "alignItems": "center",
+            "justifyContent": "center",
+        }
+
+        popover_style: dict[str, str] = {
+            "display": "flex" if confirm_open else "none",
+            "position": "fixed",
+            "top": "0",
+            "left": "0",
+            "width": "100vw",
+            "height": "100vh",
+            "backgroundColor": "rgba(5, 91, 101, 0.3)",
+            "backdropFilter": "blur(4px)",
+            "zIndex": "10010",
             "alignItems": "center",
             "justifyContent": "center",
         }
@@ -1582,11 +2111,14 @@ def create_demo_dashboard(
         return (
             clock_str,
             phase_badge_str,
+            pause_badge_style,
             waiting_msg,
             pill_pump_text,
             pill_pump_style,
             pill_utl_text,
             pill_utl_style,
+            btn_open_sum_style,
+            btn_top_replay_style,
             kpi_dec_text,
             kpi_dec_sub,
             kpi_energy_pper,
@@ -1596,17 +2128,21 @@ def create_demo_dashboard(
             kpi_cost_pct,
             kpi_comfort_rl,
             kpi_comfort_classic,
+            agent_dec_action,
+            agent_dec_reason,
+            agent_dec_conf_val,
+            agent_dec_conf_bar_style,
+            agent_dec_history_elements,
             tl_pump_str,
             tl_pump_col,
             tl_pelt_str,
             tl_pelt_col,
-            log_elements,
             footer_status,
-            svg_div,
             fig_pper,
             fig_temp,
             fig_grid,
             summary_style,
+            popover_style,
             sum_pper_val,
             sum_pper_scale,
             sum_energy_pct,

@@ -99,6 +99,7 @@ class DataModel:
 
         # Jurnal decizii agent (ultimele 10 evenimente)
         self.decision_log: collections.deque[str] = collections.deque(maxlen=15)
+        self.decision_records: list[dict[str, Any]] = []
         self._last_logged_action: tuple[bool, bool, int] | None = None
 
         # Stări interne dinamice (filtre de ordin 1 și integratori)
@@ -202,6 +203,7 @@ class DataModel:
         with self._lock:
             self.history.clear()
             self.decision_log.clear()
+            self.decision_records.clear()
             self._last_logged_action = None
 
             self._filtered_temp_int_rl = 21.8
@@ -224,13 +226,66 @@ class DataModel:
             self.comfort_ticks_classic = 0
             self.total_ticks = 0
 
-            self.log_decision("00:00 — SISTEM RESETAT · Pregătit pentru Faza 0")
+            self.log_decision(
+                "00:00 — PRE-RĂCIRE UTL · Pompă oprită",
+                action_type="precool",
+                action_text="PRE-RĂCIRE UTL · Pompă oprită",
+                reason=f"tarif fix ({self.cfg.fixed_tariff_lei_kwh:.2f} lei) · stocare termică · T interior 21.8°C",
+                confidence_pct=94,
+                gain_text="−0.8 kW",
+                sim_time_str="00:00",
+            )
 
-    def log_decision(self, message: str) -> None:
+    def log_decision(
+        self,
+        message: str,
+        action_type: str = "standby",
+        action_text: str = "",
+        reason: str = "",
+        confidence_pct: int = 95,
+        gain_text: str = "",
+        sim_time_str: str = "",
+    ) -> None:
         """Adaugă o intrare în jurnalul de decizii al agentului."""
         with self._lock:
             self.decision_log.append(message)
+            t_str = sim_time_str or (message.split(" — ")[0] if " — " in message else "00:00")
+            act_txt = action_text or (message.split(" — ")[1] if " — " in message else message)
+            record = {
+                "time_str": t_str,
+                "action_type": action_type,
+                "action_text": act_txt,
+                "reason": reason,
+                "confidence_pct": confidence_pct,
+                "gain_text": gain_text,
+                "message": message,
+            }
+            self.decision_records.append(record)
+            if len(self.decision_records) > 60:
+                self.decision_records.pop(0)
             logger.info("[AGENT DECISION] %s", message)
+
+    def get_recent_decisions(self, limit: int = 8) -> list[dict[str, Any]]:
+        """Returnează cele mai recente decizii (cele mai noi primele)."""
+        with self._lock:
+            if not self.decision_records:
+                return [self.get_current_decision()]
+            return list(reversed(self.decision_records[-limit:]))
+
+    def get_current_decision(self) -> dict[str, Any]:
+        """Returnează decizia curentă activă a agentului."""
+        with self._lock:
+            if self.decision_records:
+                return self.decision_records[-1]
+            return {
+                "time_str": "00:00",
+                "action_type": "precool",
+                "action_text": "PRE-RĂCIRE UTL · Pompă oprită",
+                "reason": f"tarif fix ({self.cfg.fixed_tariff_lei_kwh:.2f} lei) · stocare pasivă UTL",
+                "confidence_pct": 94,
+                "gain_text": "−0.8 kW",
+                "message": "00:00 — PRE-RĂCIRE UTL · Pompă oprită",
+            }
 
     def step(
         self,
@@ -438,31 +493,81 @@ class DataModel:
                 self._last_logged_action = curr_action
                 if phase.phase_id == 0:
                     tariff_str = (
-                        f"Tarif fix ({tariff_lei:.2f} lei)"
+                        f"tarif fix ({tariff_lei:.2f} lei)"
                         if self.cfg.fixed_tariff_enabled
-                        else "Tarif ieftin (0.45 lei)"
+                        else "tarif ieftin (0.45 lei)"
                     )
-                    self.log_decision(f"{sim_time_str} — PRE-RĂCIRE UTL · {tariff_str} · Pompă oprită")
+                    self.log_decision(
+                        f"{sim_time_str} — PRE-RĂCIRE UTL · {tariff_str} · Pompă oprită",
+                        action_type="precool",
+                        action_text="PRE-RĂCIRE UTL · Pompă oprită",
+                        reason=f"{tariff_str} · stocare pasivă UTL · T int {t_int_rl:.1f}°C",
+                        confidence_pct=94,
+                        gain_text="−0.8 kW",
+                        sim_time_str=sim_time_str,
+                    )
                 elif phase.phase_id == 1:
                     self.log_decision(
-                        f"{sim_time_str} — CERERE APĂ ↑ · Pompă activă · Recuperare PPER pornită"
+                        f"{sim_time_str} — CERERE APĂ ↑ · Pompă activă · Recuperare PPER pornită",
+                        action_type="pump",
+                        action_text="POMPĂ PORNITĂ · Recuperare energie PPER",
+                        reason=f"cerere apă ↑ · recuperare hidroactivă · T int {t_int_rl:.1f}°C",
+                        confidence_pct=96,
+                        gain_text="+21.2 W",
+                        sim_time_str=sim_time_str,
                     )
                 elif phase.phase_id == 2:
                     self.log_decision(
-                        f"{sim_time_str} — CANICULĂ 34°C · Recirculare pasivă UTL activă · Chiller evitat"
+                        f"{sim_time_str} — CANICULĂ 34°C · Recirculare pasivă UTL activă · Chiller evitat",
+                        action_type="utl",
+                        action_text="RECIRCULARE UTL · Răcire pasivă fără chiller",
+                        reason=f"caniculă {t_ext:.0f}°C afară · buclă sol 13°C · T int {t_int_rl:.1f}°C",
+                        confidence_pct=97,
+                        gain_text="−4.6 kW",
+                        sim_time_str=sim_time_str,
                     )
                 elif phase.phase_id == 3:
-                    desc_peak = "VÂRF DE CONSUM" if self.cfg.fixed_tariff_enabled else "VÂRF TARIF (1.70 lei)"
+                    desc_peak = "VÂRF DE CONSUM" if self.cfg.fixed_tariff_enabled else "VÂRF TARIF"
                     if actual_pump_on:
-                        self.log_decision(f"{sim_time_str} — {desc_peak} · Impuls PPER activat · LED aprins")
+                        self.log_decision(
+                            f"{sim_time_str} — {desc_peak} · Impuls PPER activat · LED aprins",
+                            action_type="pump",
+                            action_text="IMPULS PPER (8s) · Maximizare autoconsum",
+                            reason=f"vârf consum rețea · generator hidro activ · T int {t_int_rl:.1f}°C",
+                            confidence_pct=93,
+                            gain_text="+21.2 W",
+                            sim_time_str=sim_time_str,
+                        )
                     else:
                         self.log_decision(
-                            f"{sim_time_str} — {desc_peak} · Pauză impuls (4s) · Minimizare rețea"
+                            f"{sim_time_str} — {desc_peak} · Pauză impuls (4s) · Minimizare rețea",
+                            action_type="standby",
+                            action_text="PAUZĂ IMPULS (4s) · Minimizare import rețea",
+                            reason=f"amortizare dinamică presiune · T int {t_int_rl:.1f}°C",
+                            confidence_pct=90,
+                            gain_text="−1.5 kW",
+                            sim_time_str=sim_time_str,
                         )
                 elif phase.phase_id == 4:
-                    self.log_decision(f"{sim_time_str} — SEARĂ · Clădire neocupată · Trecere în standby")
+                    self.log_decision(
+                        f"{sim_time_str} — SEARĂ · Clădire neocupată · Trecere în standby",
+                        action_type="standby",
+                        action_text="STANDBY ECONOMIC · Clădire neocupată",
+                        reason=f"ocupare redusă · debite minime · T int {t_int_rl:.1f}°C",
+                        confidence_pct=95,
+                        gain_text="−2.1 kW",
+                        sim_time_str=sim_time_str,
+                    )
                 elif phase.phase_id == 5:
-                    self.log_decision(f"{sim_time_str} — SUMAR · 24h finalizate cu succes · Date validate")
+                    self.log_decision(
+                        f"{sim_time_str} — SUMAR · 24h finalizate cu succes · Date validate",
+                        action_type="precool",
+                        action_text="CICLU 24H FINALIZAT · Sumar performanță",
+                        reason=f"confort 100% · economie {energy_savings_pct:.1f}% kWh · date validate",
+                        confidence_pct=98,
+                        gain_text=f"−{energy_savings_pct:.1f}% kWh",
+                        sim_time_str=sim_time_str,
+                    )
 
             point = TelemetryPoint(
                 timestamp_s=time.time(),
