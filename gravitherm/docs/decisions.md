@@ -57,3 +57,10 @@ Format: 3-5 rânduri per sesiune/MVP — ce am decis, de ce, ce a rămas deschis
 - Ce rămâne deschis: Testarea pe bancul fizic cu `python scripts/hw_tests/01_test_sensors.py`.
 
 
+
+## [Demo Live / Etapa II] Script prezentare juriu, Dashboard Plotly Dash și tarif fix — 2026-11-04, Alexandra & Echipa
+
+- Decizie: Crearea pachetului `src/gravitherm/demo/` și a scriptului `scripts/demo_live.py`. Dashboard Plotly Dash în limba română (16:9, fără scroll vertical la 1920x1080) cu schemă SVG animată, KPI-uri mari, 3 grafice sincronizate 00:00-24:00 și sumar final. Tariful de energie electrică este configurat implicit pe **preț fix (1.00 leu/kWh)** conform cererii echipei (`fixed_tariff_enabled = True`), cu suport complet pentru revenire la tarif orar dinamic prin flag de configurare.
+- Motiv: Simplificarea mesajului pentru juriul TechChallenge Honeywell 2026 și alinierea la contractele standard de furnizare cu preț unic pe piața locală, arătând că economia de cost (~13.7%) rezultă direct din reducerea fizică a consumului HVAC (-13.7% kWh) și recuperarea PPER, fără a depinde exclusiv de arbitrajul orar de tarif.
+- Alternative luate în calcul: Păstrarea exclusivă a tarifului variabil pe tranșe orare (0.45 - 1.70 lei/kWh) — păstrată ca opțiune configurabilă (`fixed_tariff_enabled = False`).
+- Ce rămâne deschis: Repetiție pe bancul fizic cu Raspberry Pi 4 folosind `python scripts/demo_live.py --enable-pump`.
