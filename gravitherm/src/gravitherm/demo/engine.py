@@ -63,6 +63,10 @@ class DemoEngine:
         self.reset_confirm_open: bool = False
         self.summary_closed_by_user: bool = False
 
+        # Feedback vizual pentru comenzi rapide / acțiuni
+        self.last_action_msg: str = "Demo pregătit"
+        self.last_action_time: float = time.time()
+
         self._running: bool = True
         self._dt_s: float = 1.0 / max(self.cfg.engine_tick_hz, 0.5)
 
@@ -94,9 +98,13 @@ class DemoEngine:
         with self._lock:
             if self.state == EngineState.EMERGENCY_STOPPED:
                 logger.warning("[ENGINE] Nu se poate avansa: sistemul este în STOP DE URGENȚĂ (apăsați R).")
+                self.last_action_msg = "Sistem blocat în STOP DE URGENȚĂ (Apasă R)"
+                self.last_action_time = time.time()
                 return
 
             if self.state == EngineState.FINISHED:
+                self.last_action_msg = "Scenariul este deja finalizat"
+                self.last_action_time = time.time()
                 return
 
             if self.current_phase_idx < len(self.phases) - 1:
@@ -105,6 +113,8 @@ class DemoEngine:
                 next_p = self.phases[self.current_phase_idx]
                 self.sim_hour = next_p.start_hour
                 self.state = EngineState.RUNNING
+                self.last_action_msg = f"Faza {self.current_phase_idx} pornită · {next_p.name}"
+                self.last_action_time = time.time()
                 logger.info(
                     "[ENGINE] Avansat la %s (start ora %.1f:00)",
                     next_p.name,
@@ -112,6 +122,8 @@ class DemoEngine:
                 )
             else:
                 self.state = EngineState.FINISHED
+                self.last_action_msg = "Demo finalizat · 24h simulate"
+                self.last_action_time = time.time()
                 logger.info("[ENGINE] Scenariu finalizat (Faza 5 încheiată).")
 
     def toggle_pause(self) -> None:
@@ -119,10 +131,17 @@ class DemoEngine:
         with self._lock:
             if self.state == EngineState.RUNNING:
                 self.state = EngineState.PAUSED
+                self.last_action_msg = "Pauză activată"
+                self.last_action_time = time.time()
                 logger.info("[ENGINE] PAUZĂ: ceas simulat înghețat, actuatori menținuți.")
             elif self.state == EngineState.PAUSED:
                 self.state = EngineState.RUNNING
+                self.last_action_msg = "Simulare reluată"
+                self.last_action_time = time.time()
                 logger.info("[ENGINE] RELUARE: ceasul simulat avansează.")
+            elif self.state == EngineState.PHASE_COMPLETED:
+                self.last_action_msg = "Fază finalizată · Apasă Space"
+                self.last_action_time = time.time()
 
     def reset(self) -> None:
         """Resetează scenariul la Faza 0 (tasta R)."""
@@ -135,6 +154,8 @@ class DemoEngine:
             self.summary_modal_open = False
             self.reset_confirm_open = False
             self.summary_closed_by_user = False
+            self.last_action_msg = "Reset la Faza 0 efectuat"
+            self.last_action_time = time.time()
             self.dm.reset()
             logger.info("[ENGINE] RESET la Faza 0 (totul oprit, date șterse).")
 
@@ -144,6 +165,8 @@ class DemoEngine:
             self.state = EngineState.EMERGENCY_STOPPED
             self.hw.emergency_stop()
             self.dm.log_decision("STOP DE URGENȚĂ — Actuatori decuplați imediat!")
+            self.last_action_msg = "STOP DE URGENȚĂ ACTIVAT"
+            self.last_action_time = time.time()
             logger.critical("[ENGINE] STOP DE URGENȚĂ apelat din motor!")
 
     def set_pump_enabled(self, enabled: bool) -> None:
@@ -295,11 +318,15 @@ class DemoEngine:
         with self._lock:
             self.summary_modal_open = False
             self.summary_closed_by_user = True
+            self.last_action_msg = "Sumar închis · Grafice active"
+            self.last_action_time = time.time()
 
     def open_summary(self) -> None:
         """Redeschide overlay-ul de sumar la cererea utilizatorului."""
         with self._lock:
             self.summary_modal_open = True
+            self.last_action_msg = "Sumar deschis"
+            self.last_action_time = time.time()
 
     def request_reset_confirm(self) -> None:
         """Afișează popoverul de confirmare pentru reluarea demo-ului."""
@@ -325,6 +352,9 @@ class DemoEngine:
             if self.current_phase_idx == 5 and not self.summary_closed_by_user:
                 self.summary_modal_open = True
 
+            now_t = time.time()
+            toast_msg = self.last_action_msg if (now_t - self.last_action_time < 2.5) else ""
+
             return {
                 "state": self.state.value,
                 "phase_id": phase.phase_id,
@@ -338,6 +368,7 @@ class DemoEngine:
                 "wall_elapsed_s": round(self.phase_elapsed_s, 1),
                 "auto_advance": self.auto_advance,
                 "waiting_for_next": self.state == EngineState.PHASE_COMPLETED,
+                "is_paused": self.state == EngineState.PAUSED,
                 "pump_active": self.hw.pump_state,
                 "actual_pump_on": self.hw.pump_state,
                 "pump_speed_pct": round(self.hw.pump_speed_pct, 1),
@@ -347,6 +378,7 @@ class DemoEngine:
                 "is_emergency": self.hw.is_emergency_stopped,
                 "summary_modal_open": self.summary_modal_open,
                 "reset_confirm_open": self.reset_confirm_open,
+                "last_action_msg": toast_msg,
             }
 
     def close(self) -> None:

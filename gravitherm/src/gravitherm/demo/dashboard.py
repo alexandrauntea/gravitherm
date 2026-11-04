@@ -18,7 +18,7 @@ from typing import Any
 import dash
 import plotly.graph_objects as go
 import plotly.io as pio
-from dash import Input, Output, State, clientside_callback, dcc, html
+from dash import Input, Output, clientside_callback, dcc, html
 
 from gravitherm.demo.data_model import DataModel, TelemetryPoint
 from gravitherm.demo.demo_config import DemoConfig
@@ -50,19 +50,66 @@ gt_template.layout = go.Layout(
     },
     colorway=[PALETTE["deep"], PALETTE["green"], PALETTE["teal"], PALETTE["sage"]],
     xaxis={
+        "automargin": True,
         "gridcolor": PALETTE["mist"],
         "linecolor": PALETTE["mist"],
         "zerolinecolor": PALETTE["mist"],
         "tickfont": {"color": PALETTE["teal"], "size": 10},
     },
     yaxis={
+        "automargin": True,
+        "title_standoff": 14,
         "gridcolor": PALETTE["mist"],
         "linecolor": PALETTE["mist"],
         "zerolinecolor": PALETTE["mist"],
         "tickfont": {"color": PALETTE["teal"], "size": 10},
     },
+    yaxis2={
+        "automargin": True,
+        "title_standoff": 14,
+        "tickfont": {"color": PALETTE["teal"], "size": 10},
+    },
+    legend={
+        "orientation": "h",
+        "yanchor": "bottom",
+        "y": 1.02,
+        "x": 0,
+        "font": {"size": 10},
+    },
 )
 pio.templates["gravitherm"] = gt_template
+
+
+def configure_gt_figure(
+    fig: go.Figure,
+    margin_l: int = 55,
+    margin_r: int = 25,
+    margin_t: int = 40,
+    margin_b: int = 30,
+) -> None:
+    """Aplică configurarea standard de layout Plotly GraviTherm:
+    - Fără layout.title (titlurile sunt plasate ca anteturi HTML deasupra cardurilor);
+    - Legendă orizontală deasupra zonei de plotare (yanchor=bottom, y=1.02, x=0);
+    - automargin=True și title_standoff pe axele Y;
+    - Margini generoase pentru a preveni trunchierea textelor și a valorilor numerice.
+    """
+    fig.update_layout(
+        template="gravitherm",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        margin={"l": margin_l, "r": margin_r, "t": margin_t, "b": margin_b},
+        hovermode="x unified",
+        title=None,
+        legend={
+            "orientation": "h",
+            "yanchor": "bottom",
+            "y": 1.02,
+            "x": 0,
+            "font": {"size": 10},
+        },
+    )
+    fig.update_xaxes(automargin=True)
+    fig.update_yaxes(automargin=True, title_standoff=14)
 
 # Stiluri globale CSS injectate inline
 CUSTOM_CSS = """
@@ -392,7 +439,7 @@ def create_demo_dashboard(
                                 style={"fontSize": "11px", "color": PALETTE["sage"], "marginTop": "2px"},
                             ),
                         ],
-                        style={"width": "26%"},
+                        style={"flex": "0 0 250px"},
                     ),
                     # Centru: Ceas mare alb (>= 64px) + Badge Fază
                     html.Div(
@@ -463,13 +510,30 @@ def create_demo_dashboard(
                                 },
                             ),
                         ],
-                        style={"width": "46%", "textAlign": "center"},
+                        style={"flex": "1", "textAlign": "center", "minWidth": "320px"},
                     ),
-                    # Dreapta: LIVE, Status Actuatori & Butoane
+                    # Dreapta: LIVE, Status Actuatori & Butoane Comandă
                     html.Div(
                         [
+                            # Rând 1: Toast feedback acțiuni + LIVE dot + Pastile actuatori
                             html.Div(
                                 [
+                                    html.Span(
+                                        id="action-toast",
+                                        children="",
+                                        style={
+                                            "fontSize": "11px",
+                                            "fontWeight": "800",
+                                            "backgroundColor": "rgba(27, 212, 136, 0.22)",
+                                            "border": f"1px solid {PALETTE['green']}",
+                                            "color": "#fbfcfc",
+                                            "padding": "3px 8px",
+                                            "borderRadius": "4px",
+                                            "marginRight": "10px",
+                                            "display": "none",
+                                            "letterSpacing": "0.3px",
+                                        },
+                                    ),
                                     html.Span(className="live-dot"),
                                     html.Span(
                                         "LIVE",
@@ -477,7 +541,7 @@ def create_demo_dashboard(
                                             "fontSize": "12px",
                                             "fontWeight": "800",
                                             "color": PALETTE["green"],
-                                            "marginRight": "10px",
+                                            "marginRight": "8px",
                                         },
                                     ),
                                     html.Span(
@@ -488,7 +552,7 @@ def create_demo_dashboard(
                                             "fontWeight": "700",
                                             "backgroundColor": "rgba(255,255,255,0.12)",
                                             "color": PALETTE["sage"],
-                                            "padding": "4px 8px",
+                                            "padding": "3px 8px",
                                             "borderRadius": "6px",
                                             "marginRight": "6px",
                                         },
@@ -501,9 +565,8 @@ def create_demo_dashboard(
                                             "fontWeight": "700",
                                             "backgroundColor": PALETTE["teal"],
                                             "color": "#ffffff",
-                                            "padding": "4px 8px",
+                                            "padding": "3px 8px",
                                             "borderRadius": "6px",
-                                            "marginRight": "10px",
                                         },
                                     ),
                                 ],
@@ -514,6 +577,7 @@ def create_demo_dashboard(
                                     "marginBottom": "6px",
                                 },
                             ),
+                            # Rând 2: Butoane Comandă Rapide
                             html.Div(
                                 [
                                     html.Button(
@@ -558,10 +622,10 @@ def create_demo_dashboard(
                                         className="btn-ctrl btn-emergency",
                                     ),
                                 ],
-                                style={"display": "flex", "justifyContent": "flex-end"},
+                                style={"display": "flex", "alignItems": "center", "justifyContent": "flex-end"},
                             ),
                         ],
-                        style={"width": "28%"},
+                        style={"flex": "0 0 auto", "minWidth": "360px"},
                     ),
                 ],
                 className="top-bar",
@@ -569,7 +633,7 @@ def create_demo_dashboard(
                     "backgroundColor": PALETTE["deep"],
                     "color": "#fbfcfc",
                     "borderBottom": f"3px solid {PALETTE['green']}",
-                    "padding": "8px 24px",
+                    "padding": "6px 20px",
                     "display": "flex",
                     "alignItems": "center",
                     "justifyContent": "space-between",
@@ -950,11 +1014,21 @@ def create_demo_dashboard(
                             # Dreapta: Grafic Presiune & Putere PPER & Energie
                             html.Div(
                                 [
+                                    html.Div(
+                                        "HIDRAULICĂ COLOANĂ & RECUPERARE ENERGIE PPER",
+                                        style={
+                                            "fontSize": "11px",
+                                            "fontWeight": "800",
+                                            "color": PALETTE["deep"],
+                                            "letterSpacing": "0.5px",
+                                            "marginBottom": "4px",
+                                        },
+                                    ),
                                     dcc.Graph(
                                         id="graph-pressure-power",
                                         config={"displayModeBar": False, "responsive": True},
-                                        style={"width": "100%", "height": "315px"},
-                                    )
+                                        style={"width": "100%", "height": "295px"},
+                                    ),
                                 ],
                                 className="white-card",
                                 style={"width": "62%", "height": "340px"},
@@ -973,11 +1047,21 @@ def create_demo_dashboard(
                             # Grafic 1: Temperaturi (°C)
                             html.Div(
                                 [
+                                    html.Div(
+                                        "TEMPERATURI · RL vs. CONTROL CLASIC",
+                                        style={
+                                            "fontSize": "11px",
+                                            "fontWeight": "800",
+                                            "color": PALETTE["deep"],
+                                            "letterSpacing": "0.5px",
+                                            "marginBottom": "4px",
+                                        },
+                                    ),
                                     dcc.Graph(
                                         id="graph-temperatures",
                                         config={"displayModeBar": False, "responsive": True},
-                                        style={"width": "100%", "height": "235px"},
-                                    )
+                                        style={"width": "100%", "height": "210px"},
+                                    ),
                                 ],
                                 className="white-card",
                                 style={"width": "35%", "height": "255px"},
@@ -985,11 +1069,23 @@ def create_demo_dashboard(
                             # Grafic 2: Consum Rețea (kW) & Tarif
                             html.Div(
                                 [
+                                    html.Div(
+                                        "CONSUM REȚEA HVAC (kW) · TARIF FIX"
+                                        if cfg.fixed_tariff_enabled
+                                        else "CONSUM REȚEA HVAC (kW) & TARIF",
+                                        style={
+                                            "fontSize": "11px",
+                                            "fontWeight": "800",
+                                            "color": PALETTE["deep"],
+                                            "letterSpacing": "0.5px",
+                                            "marginBottom": "4px",
+                                        },
+                                    ),
                                     dcc.Graph(
                                         id="graph-grid-power",
                                         config={"displayModeBar": False, "responsive": True},
-                                        style={"width": "100%", "height": "235px"},
-                                    )
+                                        style={"width": "100%", "height": "210px"},
+                                    ),
                                 ],
                                 className="white-card",
                                 style={"width": "35%", "height": "255px"},
@@ -1467,16 +1563,63 @@ def create_demo_dashboard(
             if (!window._gravitherm_listener_installed) {
                 window._gravitherm_listener_installed = true;
 
-                // Ascultare evenimente tastatură
+                // Ascultare evenimente tastatură globală
                 window.addEventListener('keydown', function(event) {
+                    var activeEl = document.activeElement;
+                    var activeTag = activeEl ? activeEl.tagName.toLowerCase() : '';
+                    if (activeTag === 'input' || activeTag === 'textarea' || (activeEl && activeEl.isContentEditable)) {
+                        return;
+                    }
+
                     var key = event.key;
-                    if (key === ' ' || key === 'ArrowRight' || key === 'p' || key === 'P' || 
-                        key === 'r' || key === 'R' || key === 's' || key === 'S' ||
-                        key === 'Escape' || key === 't' || key === 'T') {
-                        event.preventDefault();
+                    var isActionKey = (
+                        key === ' ' || key === 'Spacebar' || key === 'ArrowRight' ||
+                        key === 'p' || key === 'P' || 
+                        key === 'r' || key === 'R' || 
+                        key === 's' || key === 'S' ||
+                        key === 'Escape' || 
+                        key === 't' || key === 'T'
+                    );
+
+                    if (isActionKey) {
+                        // Previne derularea paginii pe Space sau săgeți
+                        if (key === ' ' || key === 'Spacebar' || key === 'ArrowRight') {
+                            event.preventDefault();
+                        }
+
+                        // Declanșare prin click direct pe buton pentru animație și traseu nativ Dash
+                        var btnId = null;
+                        if (key === ' ' || key === 'Spacebar' || key === 'ArrowRight') {
+                            btnId = 'btn-next';
+                        } else if (key === 'p' || key === 'P') {
+                            btnId = 'btn-pause';
+                        } else if (key === 'r' || key === 'R') {
+                            btnId = 'btn-reset';
+                        } else if (key === 's' || key === 'S') {
+                            btnId = 'btn-stop';
+                        } else if (key === 'Escape') {
+                            btnId = 'btn-close-summary-x';
+                        } else if (key === 't' || key === 'T') {
+                            btnId = 'btn-open-summary';
+                        }
+
+                        if (btnId) {
+                            var btn = document.getElementById(btnId);
+                            if (btn) {
+                                btn.click();
+                                return;
+                            }
+                        }
+
+                        // Fallback pe input prin prototype setter React
                         var input = document.getElementById('key-press-input');
                         if (input) {
-                            input.value = key + '_' + Date.now();
+                            var nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                            if (nativeSetter) {
+                                nativeSetter.call(input, key + '_' + Date.now());
+                            } else {
+                                input.value = key + '_' + Date.now();
+                            }
                             input.dispatchEvent(new Event('input', { bubbles: true }));
                         }
                     }
@@ -1575,6 +1718,11 @@ def create_demo_dashboard(
             Output("pill-utl", "style"),
             Output("btn-open-summary", "style"),
             Output("btn-top-replay", "style"),
+            Output("btn-pause", "children"),
+            Output("btn-pause", "style"),
+            Output("btn-stop", "style"),
+            Output("action-toast", "children"),
+            Output("action-toast", "style"),
             Output("kpi-decision-text", "children"),
             Output("kpi-decision-sub", "children"),
             Output("kpi-energy-pper", "children"),
@@ -1621,8 +1769,8 @@ def create_demo_dashboard(
         modal_open = bool(status.get("summary_modal_open", False))
         confirm_open = bool(status.get("reset_confirm_open", False))
 
-        # Indicator Pauză (afișat lângă ceas)
-        is_paused = status.get("state") == EngineState.PAUSED.value
+        # Indicator Pauză (afișat lângă ceas) & Buton Pauză text/stil
+        is_paused = bool(status.get("is_paused", status.get("state") == EngineState.PAUSED.value))
         pause_badge_style = {
             "fontSize": "12px",
             "fontWeight": "800",
@@ -1632,6 +1780,41 @@ def create_demo_dashboard(
             "borderRadius": "6px",
             "marginLeft": "8px",
             "display": "inline-block" if is_paused else "none",
+        }
+        btn_pause_text = "Reia (P)" if is_paused else "Pauză (P)"
+        btn_pause_style = {
+            "marginRight": "4px",
+            "backgroundColor": PALETTE["yellow"] if is_paused else "rgba(255, 255, 255, 0.12)",
+            "color": PALETTE["deep"] if is_paused else "#ffffff",
+            "borderColor": PALETTE["yellow"] if is_paused else "rgba(255, 255, 255, 0.25)",
+            "fontWeight": "800" if is_paused else "600",
+        }
+
+        # Buton STOP (S) stil când este declanșat
+        is_emergency = bool(
+            status.get("is_emergency", status.get("state") == EngineState.EMERGENCY_STOPPED.value)
+        )
+        btn_stop_style = {
+            "backgroundColor": "#b91c1c" if is_emergency else "#ef6f5e",
+            "borderColor": "#b91c1c" if is_emergency else "#ef6f5e",
+            "color": "#ffffff",
+            "fontWeight": "800",
+            "boxShadow": "0 0 12px rgba(239, 111, 94, 0.7)" if is_emergency else "none",
+        }
+
+        # Toast feedback acțiune (1-2s)
+        toast_msg = str(status.get("last_action_msg", ""))
+        action_toast_style = {
+            "fontSize": "11px",
+            "fontWeight": "800",
+            "backgroundColor": "rgba(27, 212, 136, 0.22)",
+            "border": f"1px solid {PALETTE['green']}",
+            "color": "#fbfcfc",
+            "padding": "3px 8px",
+            "borderRadius": "4px",
+            "marginRight": "10px",
+            "display": "inline-block" if toast_msg else "none",
+            "letterSpacing": "0.3px",
         }
 
         # Mesaj navigare
@@ -1649,9 +1832,14 @@ def create_demo_dashboard(
             waiting_msg = f"Faza {phase_id} în desfășurare ({wall_elapsed:.0f}s)"
 
         # 2. Pastile Status Actuatori Top-Right
-        pump_active = bool(status.get("actual_pump_on", status.get("pump_active", False)))
-        pelt_active = bool(status.get("actual_peltier_on", status.get("peltier_active", False)))
-        pump_speed = float(status.get("pump_speed_pct", 0.0))
+        if is_emergency:
+            pump_active = False
+            pelt_active = False
+            pump_speed = 0.0
+        else:
+            pump_active = bool(status.get("actual_pump_on", status.get("pump_active", False)))
+            pelt_active = bool(status.get("actual_peltier_on", status.get("peltier_active", False)))
+            pump_speed = float(status.get("pump_speed_pct", 0.0))
 
         pill_pump_text = f"POMPĂ ON ({pump_speed:.0f}%)" if pump_active else "POMPĂ OFF"
         if pump_active:
@@ -1660,7 +1848,7 @@ def create_demo_dashboard(
                 "fontWeight": "800",
                 "backgroundColor": PALETTE["green"],
                 "color": PALETTE["deep"],
-                "padding": "4px 8px",
+                "padding": "3px 8px",
                 "borderRadius": "6px",
                 "marginRight": "6px",
             }
@@ -1670,7 +1858,7 @@ def create_demo_dashboard(
                 "fontWeight": "700",
                 "backgroundColor": "rgba(255,255,255,0.12)",
                 "color": PALETTE["sage"],
-                "padding": "4px 8px",
+                "padding": "3px 8px",
                 "borderRadius": "6px",
                 "marginRight": "6px",
             }
@@ -1682,9 +1870,8 @@ def create_demo_dashboard(
                 "fontWeight": "800",
                 "backgroundColor": PALETTE["teal"],
                 "color": "#ffffff",
-                "padding": "4px 8px",
+                "padding": "3px 8px",
                 "borderRadius": "6px",
-                "marginRight": "10px",
             }
         else:
             pill_utl_style = {
@@ -1692,9 +1879,8 @@ def create_demo_dashboard(
                 "fontWeight": "700",
                 "backgroundColor": "rgba(255,255,255,0.12)",
                 "color": PALETTE["sage"],
-                "padding": "4px 8px",
+                "padding": "3px 8px",
                 "borderRadius": "6px",
-                "marginRight": "10px",
             }
 
         # Vizibilitate butoane Sumar și Reia demo în top bar
@@ -1778,17 +1964,8 @@ def create_demo_dashboard(
         # 6. Footer Status
         footer_status = f" · Faza {status.get('phase_id', 0)}/5 · {status.get('phase_name', '')}"
 
-        # 7. Grafice Plotly (Temă luminoasă GraviTherm)
+        # 7. Grafice Plotly (Temă luminoasă GraviTherm cu titluri HTML externe)
         hours_x = [pt.sim_hour for pt in history] if history else []
-
-        layout_base = {
-            "template": "gravitherm",
-            "margin": {"l": 40, "r": 20, "t": 32, "b": 28},
-            "paper_bgcolor": "rgba(0,0,0,0)",
-            "plot_bgcolor": "rgba(0,0,0,0)",
-            "font": {"family": "Plus Jakarta Sans, sans-serif", "color": PALETTE["deep"]},
-            "hovermode": "x unified",
-        }
 
         # --- Grafic Central Dreapta: Presiune & Putere PPER ---
         fig_pper = go.Figure()
@@ -1824,11 +2001,6 @@ def create_demo_dashboard(
             )
 
         fig_pper.update_layout(
-            **layout_base,
-            title={
-                "text": "HIDRAULICĂ COLOANĂ & RECUPERARE ENERGIE PPER",
-                "font": {"size": 12, "color": PALETTE["deep"], "weight": 700},
-            },
             xaxis={
                 "title": "Ora simulată (00:00 - 24:00)",
                 "range": [0, 24],
@@ -1850,15 +2022,8 @@ def create_demo_dashboard(
                 "showgrid": False,
                 "tickfont": {"size": 10, "color": PALETTE["teal"]},
             },
-            legend={
-                "orientation": "h",
-                "yanchor": "bottom",
-                "y": 1.02,
-                "xanchor": "right",
-                "x": 1,
-                "font": {"size": 10},
-            },
         )
+        configure_gt_figure(fig_pper, margin_l=60, margin_r=65, margin_t=40, margin_b=32)
 
         # --- Grafic Jos Stânga: Temperaturi (°C) ---
         fig_temp = go.Figure()
@@ -1910,11 +2075,6 @@ def create_demo_dashboard(
             )
 
         fig_temp.update_layout(
-            **layout_base,
-            title={
-                "text": "TEMPERATURI · RL vs. CONTROL CLASIC",
-                "font": {"size": 12, "color": PALETTE["deep"], "weight": 700},
-            },
             xaxis={
                 "range": [0, 24],
                 "dtick": 4,
@@ -1927,15 +2087,8 @@ def create_demo_dashboard(
                 "gridcolor": PALETTE["mist"],
                 "tickfont": {"size": 10, "color": PALETTE["teal"]},
             },
-            legend={
-                "orientation": "h",
-                "yanchor": "bottom",
-                "y": 1.02,
-                "xanchor": "right",
-                "x": 1,
-                "font": {"size": 9},
-            },
         )
+        configure_gt_figure(fig_temp, margin_l=50, margin_r=25, margin_t=40, margin_b=30)
 
         # --- Grafic Jos Mijloc: Consum Rețea (kW) & Benzi Tarif ---
         fig_grid = go.Figure()
@@ -1970,14 +2123,7 @@ def create_demo_dashboard(
                 )
             )
 
-        grid_title = (
-            "CONSUM REȚEA HVAC (kW) · TARIF FIX"
-            if cfg.fixed_tariff_enabled
-            else "CONSUM REȚEA HVAC (kW) & TARIF"
-        )
         fig_grid.update_layout(
-            **layout_base,
-            title={"text": grid_title, "font": {"size": 12, "color": PALETTE["deep"], "weight": 700}},
             xaxis={
                 "range": [0, 24],
                 "dtick": 4,
@@ -1990,15 +2136,46 @@ def create_demo_dashboard(
                 "gridcolor": PALETTE["mist"],
                 "tickfont": {"size": 10, "color": PALETTE["teal"]},
             },
-            legend={
-                "orientation": "h",
-                "yanchor": "bottom",
-                "y": 1.02,
-                "xanchor": "right",
-                "x": 1,
-                "font": {"size": 10},
-            },
         )
+        configure_gt_figure(fig_grid, margin_l=55, margin_r=25, margin_t=40, margin_b=30)
+
+        # 8. Stiluri Overlay Sumar Faza 5 și Popover Confirmare
+        summary_style: dict[str, str] = {
+            "display": "flex" if modal_open else "none",
+            "position": "fixed",
+            "top": "0",
+            "left": "0",
+            "width": "100vw",
+            "height": "100vh",
+            "backgroundColor": "rgba(5, 91, 101, 0.45)",
+            "backdropFilter": "blur(8px)",
+            "zIndex": "9999",
+            "alignItems": "center",
+            "justifyContent": "center",
+        }
+
+        popover_style: dict[str, str] = {
+            "display": "flex" if confirm_open else "none",
+            "position": "fixed",
+            "top": "0",
+            "left": "0",
+            "width": "100vw",
+            "height": "100vh",
+            "backgroundColor": "rgba(5, 91, 101, 0.3)",
+            "backdropFilter": "blur(4px)",
+            "zIndex": "10010",
+            "alignItems": "center",
+            "justifyContent": "center",
+        }
+
+        sum_metrics = data_model.get_summary_metrics()
+        sum_pper_val = f"{sum_metrics.get('energy_pper_lab_wh', 0.0):.2f} Wh (machetă)"
+        sum_pper_scale = (
+            f"Extrapolat: {sum_metrics.get('energy_pper_real_kwh_day', 0.0):.2f} kWh/zi (clădire 20 etaje)"
+        )
+        sum_energy_pct = f"-{sum_metrics.get('energy_savings_pct', 0.0):.1f}% kWh economisiți"
+        sum_cost_pct = f"Economie cost: -{sum_metrics.get('cost_savings_pct', 0.0):.1f}% ({sum_metrics.get('cost_saved_lei_year', 0.0):,.0f} lei/an)"
+        sum_co2_val = f"{sum_metrics.get('co2_avoided_kg_year', 0.0):.0f} kg CO2 / an"
 
         # 8. Stiluri Overlay Sumar Faza 5 și Popover Confirmare
         summary_style: dict[str, str] = {
@@ -2049,6 +2226,11 @@ def create_demo_dashboard(
             pill_utl_style,
             btn_open_sum_style,
             btn_top_replay_style,
+            btn_pause_text,
+            btn_pause_style,
+            btn_stop_style,
+            toast_msg,
+            action_toast_style,
             kpi_dec_text,
             kpi_dec_sub,
             kpi_energy_pper,
