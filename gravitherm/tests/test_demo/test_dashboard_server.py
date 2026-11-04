@@ -45,3 +45,31 @@ def test_dashboard_page_serves_html():
             assert "agent-decisions-panel" in layout_json
     finally:
         eng.close()
+
+
+def test_dashboard_callback_execution():
+    """Verifică execuția callback-ului principal fără erori (fără KeyError sau crash)."""
+    cfg = DemoConfig()
+    hw = HardwareManager(mock_mode=True)
+    dm = DataModel(config=cfg, mock_mode=True)
+    eng = DemoEngine(hardware=hw, data_model=dm, config=cfg, auto_advance=False)
+
+    try:
+        eng.start()
+        app = create_demo_dashboard(engine=eng, data_model=dm, config=cfg)
+
+        fn = None
+        for k, v in app.callback_map.items():
+            if "clock-display.children" in str(k):
+                fn = v["callback"]
+                break
+
+        assert fn is not None, "Callback-ul update_dashboard_views nu a fost găsit"
+        user_fn = getattr(fn, "__wrapped__", fn)
+        result = user_fn(1)
+        assert len(result) == 39
+        assert isinstance(result[0], str)
+        assert ":" in result[0]  # format oră HH:MM
+    finally:
+        eng.close()
+
