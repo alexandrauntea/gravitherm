@@ -67,9 +67,69 @@ def test_dashboard_callback_execution():
         assert fn is not None, "Callback-ul update_dashboard_views nu a fost găsit"
         user_fn = getattr(fn, "__wrapped__", fn)
         result = user_fn(1)
-        assert len(result) == 39
+        assert len(result) == 44
         assert isinstance(result[0], str)
         assert ":" in result[0]  # format oră HH:MM
+
+        # Verificare că figurile nu au titlu intern Plotly (titlurile sunt HTML)
+        fig_pper = result[34]
+        fig_temp = result[35]
+        fig_grid = result[36]
+        assert fig_pper.layout.title.text is None
+        assert fig_temp.layout.title.text is None
+        assert fig_grid.layout.title.text is None
+
+        # Verificare inițială buton pauză
+        assert result[10] == "Pauză (P)"
+    finally:
+        eng.close()
+
+
+def test_dashboard_controls_and_feedback():
+    """Verifică legarea acțiunilor și tastelor: pauză/reluare, avansare fază, stop de urgență și toast."""
+    cfg = DemoConfig()
+    hw = HardwareManager(mock_mode=True)
+    dm = DataModel(config=cfg, mock_mode=True)
+    eng = DemoEngine(hardware=hw, data_model=dm, config=cfg, auto_advance=False)
+
+    try:
+        eng.start()
+        app = create_demo_dashboard(engine=eng, data_model=dm, config=cfg)
+
+        fn = None
+        for k, v in app.callback_map.items():
+            if "clock-display.children" in str(k):
+                fn = v["callback"]
+                break
+        user_fn = getattr(fn, "__wrapped__", fn)
+
+        # 1. Test pauză prin toggle_pause / tasta P
+        eng.toggle_pause()
+        res_paused = user_fn(2)
+        assert res_paused[10] == "Reia (P)"
+        assert res_paused[13] == "Pauză activată"
+
+        # 2. Test reluare
+        eng.toggle_pause()
+        res_resumed = user_fn(3)
+        assert res_resumed[10] == "Pauză (P)"
+        assert res_resumed[13] == "Simulare reluată"
+
+        # 3. Test avansare faza prin Space / next_phase
+        eng.next_phase()
+        res_p1 = user_fn(4)
+        assert "Faza 1" in res_p1[1]
+        assert "Faza 1 pornită" in res_p1[13]
+
+        # 4. Test STOP de urgență prin tasta S / buton STOP
+        eng.emergency_stop()
+        res_stop = user_fn(5)
+        assert res_stop[13] == "STOP DE URGENȚĂ ACTIVAT"
+        # Verificare că actuatorii sunt forțați pe OPRITĂ / OPRIT
+        assert res_stop[29] == "OPRITĂ"
+        assert res_stop[31] == "OPRIT"
+        assert res_stop[4] == "POMPĂ OFF"
+        assert res_stop[6] == "UTL OFF"
     finally:
         eng.close()
 
