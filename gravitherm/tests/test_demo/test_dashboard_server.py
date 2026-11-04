@@ -42,6 +42,6 @@ def test_dashboard_page_serves_html():
             assert resp.status == 200
             layout_json = resp.read().decode("utf-8")
             assert "demo-interval" in layout_json
-            assert "building-svg-container" in layout_json
+            assert "agent-decisions-panel" in layout_json
     finally:
         eng.close()

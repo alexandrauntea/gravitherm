@@ -41,7 +41,9 @@ Comenzile sunt disponibile **direct din fereastra de browser** (fără a ieși d
 |---|---|---|
 | **`Space`** sau **`→`** | **Faza următoare** | Declanșează trecerea la următoarea fază a zilei simulate. Când o fază se termină, ceasul simulat îngheață discret și așteaptă apăsarea tastei Space. |
 | **`P`** | **Pauză / Reluare** | Îngheață ceasul simulat și menține starea curentă a actuatorilor (util când vorbiți mai mult despre un grafic). |
-| **`R`** | **Reset Demo** | Resetează totul la Faza 0 (ora 00:00), golește istoricul și oprește pompa și Peltierul. |
+| **`Esc`** | **Închide sumarul (Faza 5)** | Închide overlay-ul de sumar și lasă vizibile graficele complete ale zilei pe ecran pentru discuții cu juriul. |
+| **`T`** | **Deschide sumarul (Faza 5)** | Redeschide ecranul cu rezultate finale la cererea juriului. |
+| **`R`** | **Reset Demo** | Solicită confirmare popover ("Sigur reiei demo-ul?") și resetează totul la Faza 0 (ora 00:00). |
 | **`S`** | **STOP DE URGENȚĂ** | **Decuplare forțată instantanee** a pompei și a modulului Peltier. Comenzile sunt blocate până la apăsarea tastei R. |
 
 ---
