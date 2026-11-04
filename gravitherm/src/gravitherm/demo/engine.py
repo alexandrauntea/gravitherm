@@ -58,6 +58,11 @@ class DemoEngine:
         self.phase_elapsed_s: float = 0.0
         self.sim_hour: float = 0.0
 
+        # Stare modal sumar și popover confirmare
+        self.summary_modal_open: bool = False
+        self.reset_confirm_open: bool = False
+        self.summary_closed_by_user: bool = False
+
         self._running: bool = True
         self._dt_s: float = 1.0 / max(self.cfg.engine_tick_hz, 0.5)
 
@@ -127,6 +132,9 @@ class DemoEngine:
             self.phase_elapsed_s = 0.0
             self.sim_hour = self.phases[0].start_hour
             self.state = EngineState.RUNNING
+            self.summary_modal_open = False
+            self.reset_confirm_open = False
+            self.summary_closed_by_user = False
             self.dm.reset()
             logger.info("[ENGINE] RESET la Faza 0 (totul oprit, date șterse).")
 
@@ -277,11 +285,46 @@ class DemoEngine:
             self.reset()
         elif clean_cmd in ("s", "stop", "keys", "emergency"):
             self.emergency_stop()
+        elif clean_cmd in ("escape", "esc", "close"):
+            self.close_summary()
+        elif clean_cmd in ("t", "sumar", "summary"):
+            self.open_summary()
+
+    def close_summary(self) -> None:
+        """Închide overlay-ul de sumar la cererea utilizatorului."""
+        with self._lock:
+            self.summary_modal_open = False
+            self.summary_closed_by_user = True
+
+    def open_summary(self) -> None:
+        """Redeschide overlay-ul de sumar la cererea utilizatorului."""
+        with self._lock:
+            self.summary_modal_open = True
+
+    def request_reset_confirm(self) -> None:
+        """Afișează popoverul de confirmare pentru reluarea demo-ului."""
+        with self._lock:
+            self.reset_confirm_open = True
+
+    def cancel_reset_confirm(self) -> None:
+        """Închide popoverul de confirmare a resetării."""
+        with self._lock:
+            self.reset_confirm_open = False
 
     def get_status_dict(self) -> dict[str, Any]:
         """Returnează starea curentă a motorului pentru dashboard."""
         with self._lock:
             phase = self.phases[self.current_phase_idx]
+
+            # Formatare oră simulată HH:MM
+            h_int = int(self.sim_hour)
+            m_int = int((self.sim_hour - h_int) * 60)
+            sim_time_str = f"{h_int:02d}:{m_int:02d}" if h_int < 24 else "24:00"
+
+            # Auto-deschidere sumar în Faza 5 dacă nu a fost închis explicit
+            if self.current_phase_idx == 5 and not self.summary_closed_by_user:
+                self.summary_modal_open = True
+
             return {
                 "state": self.state.value,
                 "phase_id": phase.phase_id,
@@ -289,14 +332,21 @@ class DemoEngine:
                 "phase_short": phase.short_title,
                 "phase_decision": phase.decision_text,
                 "sim_hour": round(self.sim_hour, 2),
+                "sim_time_str": sim_time_str,
                 "phase_elapsed_s": round(self.phase_elapsed_s, 1),
                 "phase_duration_s": phase.duration_s,
+                "wall_elapsed_s": round(self.phase_elapsed_s, 1),
                 "auto_advance": self.auto_advance,
+                "waiting_for_next": self.state == EngineState.PHASE_COMPLETED,
                 "pump_active": self.hw.pump_state,
+                "actual_pump_on": self.hw.pump_state,
                 "pump_speed_pct": round(self.hw.pump_speed_pct, 1),
                 "pump_enabled": self.hw.pump_enabled,
                 "peltier_active": self.hw.peltier_state,
+                "actual_peltier_on": self.hw.peltier_state,
                 "is_emergency": self.hw.is_emergency_stopped,
+                "summary_modal_open": self.summary_modal_open,
+                "reset_confirm_open": self.reset_confirm_open,
             }
 
     def close(self) -> None:

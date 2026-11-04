@@ -348,18 +348,12 @@ def create_demo_dashboard(
         [
             # Injectare stiluri CSS
             html.Div([dcc.Markdown(f"<style>{CUSTOM_CSS}</style>", dangerously_allow_html=True)]),
-            # Monitorizare URL pentru control programmatic stare modal
-            dcc.Location(id="demo-url", refresh=False),
             # Timer periodic Dash (1 Hz)
             dcc.Interval(id="demo-interval", interval=1000, n_intervals=0),
             # Input ascuns pentru recepte taste prin JS
             dcc.Input(id="key-press-input", type="text", style={"display": "none"}),
             html.Div(id="clientside-listener-dummy", style={"display": "none"}),
-            # Stocare stare modal sumar și confirmare reset
-            dcc.Store(id="summary-modal-open-store", data=False),
-            dcc.Store(id="reset-confirm-open-store", data=False),
-            dcc.Store(id="last-phase-id-store", data=-1),
-            # 1. BANDA DE SUS (Top Bar - solid #055b65 cu text alb)
+            # 1. BANDA DE SUS (Top Bar - solid #055b65 verde închis cu text alb)
             html.Div(
                 [
                     # Stânga: Brand & Logo
@@ -571,6 +565,17 @@ def create_demo_dashboard(
                     ),
                 ],
                 className="top-bar",
+                style={
+                    "backgroundColor": PALETTE["deep"],
+                    "color": "#fbfcfc",
+                    "borderBottom": f"3px solid {PALETTE['green']}",
+                    "padding": "8px 24px",
+                    "display": "flex",
+                    "alignItems": "center",
+                    "justifyContent": "space-between",
+                    "boxShadow": "0 4px 14px rgba(5, 91, 101, 0.25)",
+                    "width": "100%",
+                },
             ),
             # CONTAINER PRINCIPAL
             html.Div(
@@ -1487,113 +1492,12 @@ def create_demo_dashboard(
                     }
                 });
             }
-            return window.dash_clientside.no_update;
+            return "";
         }
         """,
         Output("clientside-listener-dummy", "children"),
         Input("demo-interval", "n_intervals"),
     )
-
-    # Callback pentru gestionarea stărilor de modal sumar și popover de reset
-    @app.callback(
-        [
-            Output("summary-modal-open-store", "data"),
-            Output("reset-confirm-open-store", "data"),
-            Output("last-phase-id-store", "data"),
-        ],
-        [
-            Input("btn-close-summary-x", "n_clicks"),
-            Input("btn-close-summary", "n_clicks"),
-            Input("btn-open-summary", "n_clicks"),
-            Input("btn-overlay-replay", "n_clicks"),
-            Input("btn-top-replay", "n_clicks"),
-            Input("btn-confirm-reset-yes", "n_clicks"),
-            Input("btn-confirm-reset-no", "n_clicks"),
-            Input("demo-interval", "n_intervals"),
-            Input("key-press-input", "value"),
-            Input("demo-url", "search"),
-        ],
-        [
-            State("summary-modal-open-store", "data"),
-            State("reset-confirm-open-store", "data"),
-            State("last-phase-id-store", "data"),
-        ],
-        prevent_initial_call=False,
-    )
-    def handle_modals_state(
-        btn_close_x: int | None,
-        btn_close_sum: int | None,
-        btn_open_sum: int | None,
-        btn_overlay_replay: int | None,
-        btn_top_replay: int | None,
-        btn_confirm_yes: int | None,
-        btn_confirm_no: int | None,
-        n_intervals: int | None,
-        key_value: str | None,
-        url_search: str | None,
-        modal_open: bool,
-        confirm_open: bool,
-        last_phase_id: int,
-    ) -> tuple[bool, bool, int]:
-        ctx = dash.callback_context
-        current_status = engine.get_status_dict()
-        current_phase = current_status["phase_id"]
-
-        if not ctx.triggered:
-            # Pornire inițială
-            if url_search and ("summary=closed" in url_search or "modal=0" in url_search):
-                return False, False, current_phase
-            return False, False, current_phase
-
-        triggered_id = ctx.triggered[0]["prop_id"].split(".")[0]
-
-        # 0. Tratare parametri URL
-        if triggered_id == "demo-url" and url_search:
-            if "summary=closed" in url_search or "modal=0" in url_search:
-                return False, False, current_phase
-            elif "summary=open" in url_search or "modal=1" in url_search:
-                return True, False, current_phase
-
-        # 1. Tratare taste Esc și T
-        if triggered_id == "key-press-input" and key_value:
-            key_code = key_value.split("_")[0]
-            if key_code == "Escape":
-                return False, False, current_phase
-            elif key_code in ("t", "T"):
-                return True, False, current_phase
-
-        # 2. Tratare butoane închidere sumar
-        if triggered_id in ("btn-close-summary-x", "btn-close-summary"):
-            return False, False, current_phase
-
-        # 3. Tratare buton deschidere sumar
-        if triggered_id == "btn-open-summary":
-            return True, False, current_phase
-
-        # 4. Solicitare confirmare reia demo
-        if triggered_id in ("btn-overlay-replay", "btn-top-replay"):
-            return modal_open, True, current_phase
-
-        # 5. Confirmare reset YES
-        if triggered_id == "btn-confirm-reset-yes":
-            engine.reset()
-            return False, False, 0
-
-        # 6. Anulare confirmare reset NO
-        if triggered_id == "btn-confirm-reset-no":
-            return modal_open, False, current_phase
-
-        # 7. Auto-deschidere la intrarea în Faza 5
-        if current_phase == 5 and last_phase_id != 5:
-            if url_search and ("summary=closed" in url_search or "modal=0" in url_search):
-                return False, False, 5
-            return True, False, 5
-
-        # Dacă s-a resetat între timp
-        if current_phase == 0 and last_phase_id == 5:
-            return False, False, 0
-
-        return modal_open, confirm_open, current_phase
 
     # Callback pentru tratarea comenzilor hardware/engine din tastatură și butoane UI
     @app.callback(
@@ -1604,6 +1508,13 @@ def create_demo_dashboard(
             Input("btn-pause", "n_clicks"),
             Input("btn-reset", "n_clicks"),
             Input("btn-stop", "n_clicks"),
+            Input("btn-close-summary-x", "n_clicks"),
+            Input("btn-close-summary", "n_clicks"),
+            Input("btn-open-summary", "n_clicks"),
+            Input("btn-overlay-replay", "n_clicks"),
+            Input("btn-top-replay", "n_clicks"),
+            Input("btn-confirm-reset-yes", "n_clicks"),
+            Input("btn-confirm-reset-no", "n_clicks"),
         ],
         prevent_initial_call=True,
     )
@@ -1613,6 +1524,13 @@ def create_demo_dashboard(
         btn_pause: int | None,
         btn_reset: int | None,
         btn_stop: int | None,
+        btn_close_x: int | None,
+        btn_close_sum: int | None,
+        btn_open_sum: int | None,
+        btn_overlay_replay: int | None,
+        btn_top_replay: int | None,
+        btn_confirm_yes: int | None,
+        btn_confirm_no: int | None,
     ) -> str:
         ctx = dash.callback_context
         if not ctx.triggered:
@@ -1622,8 +1540,7 @@ def create_demo_dashboard(
 
         if triggered_id == "key-press-input" and key_value:
             key_code = key_value.split("_")[0]
-            if key_code not in ("Escape", "t", "T"):
-                engine.handle_command_string(key_code)
+            engine.handle_command_string(key_code)
         elif triggered_id == "btn-next":
             engine.next_phase()
         elif triggered_id == "btn-pause":
@@ -1632,6 +1549,16 @@ def create_demo_dashboard(
             engine.reset()
         elif triggered_id == "btn-stop":
             engine.emergency_stop()
+        elif triggered_id in ("btn-close-summary-x", "btn-close-summary"):
+            engine.close_summary()
+        elif triggered_id == "btn-open-summary":
+            engine.open_summary()
+        elif triggered_id in ("btn-overlay-replay", "btn-top-replay"):
+            engine.request_reset_confirm()
+        elif triggered_id == "btn-confirm-reset-yes":
+            engine.reset()
+        elif triggered_id == "btn-confirm-reset-no":
+            engine.cancel_reset_confirm()
 
         return ""
 
@@ -1678,27 +1605,24 @@ def create_demo_dashboard(
             Output("summary-cost-pct", "children"),
             Output("summary-co2-val", "children"),
         ],
-        [
-            Input("demo-interval", "n_intervals"),
-            Input("summary-modal-open-store", "data"),
-            Input("reset-confirm-open-store", "data"),
-        ],
+        Input("demo-interval", "n_intervals"),
     )
-    def update_dashboard_views(
-        n_intervals: int,
-        modal_open: bool,
-        confirm_open: bool,
-    ) -> tuple[Any, ...]:
+    def update_dashboard_views(n_intervals: int) -> tuple[Any, ...]:
         status = engine.get_status_dict()
         history = list(data_model.history)
         last_pt: TelemetryPoint | None = history[-1] if history else None
 
-        # 1. Ceas & Badge Fază
-        clock_str = status["sim_time_str"]
-        phase_badge_str = f"Faza {status['phase_id']} · {status['phase_name']}"
+        # 1. Formatare ceas & badge fază în mod garantat sigur
+        sim_h = float(status.get("sim_hour", 0.0))
+        h_int = int(sim_h)
+        m_int = int((sim_h - h_int) * 60)
+        clock_str = status.get("sim_time_str") or (f"{h_int:02d}:{m_int:02d}" if h_int < 24 else "24:00")
+        phase_badge_str = f"Faza {status.get('phase_id', 0)} · {status.get('phase_name', '')}"
+        modal_open = bool(status.get("summary_modal_open", False))
+        confirm_open = bool(status.get("reset_confirm_open", False))
 
         # Indicator Pauză (afișat lângă ceas)
-        is_paused = status["state"] == EngineState.PAUSED.value
+        is_paused = status.get("state") == EngineState.PAUSED.value
         pause_badge_style = {
             "fontSize": "12px",
             "fontWeight": "800",
@@ -1711,19 +1635,25 @@ def create_demo_dashboard(
         }
 
         # Mesaj navigare
-        if status["waiting_for_next"]:
-            if status["phase_id"] < 5:
+        waiting_for_next = bool(
+            status.get("waiting_for_next", status.get("state") == EngineState.PHASE_COMPLETED.value)
+        )
+        wall_elapsed = float(status.get("wall_elapsed_s", status.get("phase_elapsed_s", 0.0)))
+        phase_id = status.get("phase_id", 0)
+        if waiting_for_next:
+            if phase_id < 5:
                 waiting_msg = "Fază încheiată · Apasă Space pentru faza următoare"
             else:
                 waiting_msg = "Demo finalizat · 24h simulate"
         else:
-            waiting_msg = f"Faza {status['phase_id']} în desfășurare ({status['wall_elapsed_s']:.0f}s)"
+            waiting_msg = f"Faza {phase_id} în desfășurare ({wall_elapsed:.0f}s)"
 
         # 2. Pastile Status Actuatori Top-Right
-        pump_active = status["actual_pump_on"]
-        pelt_active = status["actual_peltier_on"]
+        pump_active = bool(status.get("actual_pump_on", status.get("pump_active", False)))
+        pelt_active = bool(status.get("actual_peltier_on", status.get("peltier_active", False)))
+        pump_speed = float(status.get("pump_speed_pct", 0.0))
 
-        pill_pump_text = f"POMPĂ ON ({status['pump_speed_pct']:.0f}%)" if pump_active else "POMPĂ OFF"
+        pill_pump_text = f"POMPĂ ON ({pump_speed:.0f}%)" if pump_active else "POMPĂ OFF"
         if pump_active:
             pill_pump_style = {
                 "fontSize": "11px",
@@ -1768,7 +1698,7 @@ def create_demo_dashboard(
             }
 
         # Vizibilitate butoane Sumar și Reia demo în top bar
-        is_phase_5 = status["phase_id"] == 5
+        is_phase_5 = status.get("phase_id", 0) == 5
         btn_open_sum_style = {
             "marginRight": "4px",
             "display": "inline-block" if (is_phase_5 and not modal_open) else "none",
@@ -1799,7 +1729,7 @@ def create_demo_dashboard(
             kpi_comfort_rl = f"{last_pt.comfort_pct_rl:.1f}"
             kpi_comfort_classic = f"Control clasic: {last_pt.comfort_pct_classic:.1f}%"
         else:
-            kpi_dec_text = status["phase_decision"]
+            kpi_dec_text = status.get("phase_decision", "Pre-răcire UTL pe tarif fix")
             if cfg.fixed_tariff_enabled:
                 kpi_dec_sub = f"Tarif fix: {cfg.fixed_tariff_lei_kwh:.2f} lei/kWh · Minimizare rețea"
             else:
@@ -1831,7 +1761,7 @@ def create_demo_dashboard(
         agent_dec_history_elements = [render_decision_history_item(rec) for rec in recent_decs]
 
         # 5. Stare Actuatori (Rândul de Jos Dreapta)
-        tl_pump_str = f"PORNITĂ ({status['pump_speed_pct']:.0f}%)" if pump_active else "OPRITĂ"
+        tl_pump_str = f"PORNITĂ ({pump_speed:.0f}%)" if pump_active else "OPRITĂ"
         tl_pump_col = (
             {"color": PALETTE["green"], "fontSize": "12px", "fontWeight": "800"}
             if pump_active
@@ -1846,7 +1776,7 @@ def create_demo_dashboard(
         )
 
         # 6. Footer Status
-        footer_status = f" · Faza {status['phase_id']}/5 · {status['phase_name']}"
+        footer_status = f" · Faza {status.get('phase_id', 0)}/5 · {status.get('phase_name', '')}"
 
         # 7. Grafice Plotly (Temă luminoasă GraviTherm)
         hours_x = [pt.sim_hour for pt in history] if history else []
